@@ -25,6 +25,11 @@ reverse (foo/bar and foo-bar collide), so nested project dirs are only
 remapped when a session jsonl inside them confirms a real cwd under the
 moved path.
 
+Both arguments go through canonical() first (~, relative paths, trailing
+slashes, symlinked ancestors), because that encoding is only a lookup key
+if it is computed from the same physical path the kernel handed Claude as
+its cwd — see canonical() for why the last component is left alone.
+
 --already-moved reconciles a folder that was renamed by something else (a
 plain `mv`, an editor, Claude itself) and left its history stranded on the
 old path. No move is performed: src must be gone, dst must exist, and only
@@ -74,6 +79,25 @@ RESTORE_ROOT = os.environ.get("CLAUDE_MV_RESTORE_ROOT") or \
 
 def enc(path: str) -> str:
     return re.sub(r"[^A-Za-z0-9]", "-", path)
+
+
+def canonical(path: str) -> str:
+    """Absolute path with symlinked *ancestors* resolved, last component kept.
+
+    Claude Code keys history on the process cwd, which the kernel reports
+    physically — symlinks already resolved. So `/tmp/x` (macOS: a symlink to
+    `/private/tmp/x`) is recorded as `/private/tmp/x`, and a path given
+    through a symlinked ancestor has to be resolved the same way or enc()
+    looks up a projects/ dir that was never there. Also handles ~ and
+    relative paths, and drops trailing slashes.
+
+    The last component is deliberately NOT resolved: if it is itself a
+    symlink, `mv` renames the link, and the real folder — the one whose cwd
+    the sessions recorded — does not move, so its history must stay put.
+    """
+    path = os.path.abspath(os.path.expanduser(path))
+    parent, base = os.path.split(path)
+    return os.path.join(os.path.realpath(parent), base) if base else path
 
 
 def under(path: str, root: str) -> bool:
@@ -570,8 +594,8 @@ def main() -> int:
                  "--already-moved (there is no mv to do on its own) — "
                  "use abort to do nothing")
 
-    src = os.path.abspath(os.path.expanduser(args.src))
-    dst = os.path.abspath(os.path.expanduser(args.dst))
+    src = canonical(args.src)
+    dst = canonical(args.dst)
     if args.already_moved:
         # Reconcile-only: the move already happened elsewhere. Both ends are
         # inverted vs. a real move — the old path must be gone, the new one
@@ -585,6 +609,9 @@ def main() -> int:
             print(f"claude-mv: --already-moved, but the new path is not a "
                   f"directory: {dst}", file=sys.stderr)
             return 1
+        # The folder is already living here, so sessions started in it record
+        # the fully physical path — resolve the last component too.
+        dst = os.path.realpath(dst)
         if src == dst:
             print("claude-mv: src and dst are the same path — nothing to "
                   "re-key", file=sys.stderr)
@@ -596,7 +623,10 @@ def main() -> int:
                   f"--already-moved {args.src} {args.dst}", file=sys.stderr)
             return 1
         if os.path.isdir(dst):
-            dst = os.path.join(dst, os.path.basename(src))
+            # mv-into-dir: the folder lands inside an existing directory, so
+            # that directory's own symlinks resolve (unlike a dst that is the
+            # new *name*, which doesn't exist yet).
+            dst = os.path.join(os.path.realpath(dst), os.path.basename(src))
         if os.path.exists(dst):
             print(f"claude-mv: destination exists: {dst}", file=sys.stderr)
             return 1
@@ -628,13 +658,28 @@ def main() -> int:
     # abort really means "nothing happened".
     plans = [build_plan(p, src, dst) for p in profiles]
     has_conflicts = any(p["dir_conflicts"] or p["key_conflicts"] for p in plans)
-    if args.already_moved and not any(
-            p["dir_moves"] or p["dir_conflicts"] or
-            p["key_moves"] or p["key_conflicts"] for p in plans):
-        print(f"claude-mv: no Claude history keyed on {src} — nothing to "
-              f"re-key\n  (only history.jsonl prompt entries, if any, would "
-              f"be touched; check the old path)", file=sys.stderr)
-        return 1
+    nothing_keyed = not any(p["dir_moves"] or p["dir_conflicts"] or
+                            p["key_moves"] or p["key_conflicts"] for p in plans)
+    if nothing_keyed:
+        if args.already_moved:
+            print(f"claude-mv: no Claude history keyed on {src} — nothing to "
+                  f"re-key\n  (only history.jsonl prompt entries, if any, "
+                  f"would be touched; check the old path)", file=sys.stderr)
+            return 1
+        # A plain mv of a folder Claude never ran in is perfectly legitimate,
+        # so this is a warning, not an error — but it is also exactly what a
+        # mistyped or unresolvable src looks like, and staying silent about
+        # it is how a move "succeeds" having migrated nothing.
+        print(f"⚠️  no Claude project history is keyed on {src}\n"
+              f"   the mv still happens; only history.jsonl prompt entries "
+              f"(if any) get re-keyed")
+        if os.path.islink(src):
+            print(f"   note: {src} is a symlink — mv renames the link, so the "
+                  f"real folder\n         its sessions were recorded in is "
+                  f"not moving")
+        else:
+            print(f"   if you expected sessions here, check the path — Claude "
+                  f"records the\n         symlink-resolved one")
     mode = args.on_conflict
     if has_conflicts:
         print_conflicts(plans)

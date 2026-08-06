@@ -4,26 +4,42 @@
     python3 claude/claude-mv/tests/test_claude_mv.py          # or -v
     python3 -m unittest discover claude/claude-mv/tests
 
-Two layers:
+Four layers, each closing a gap the one before it can't see:
 
-  * unit tests on the pure helpers (path encoding, config merging), loaded
-    straight out of claude-mv.py;
+  * unit tests on the pure helpers (path encoding, canonicalization, config
+    merging), loaded straight out of claude-mv.py;
   * end-to-end tests that build a throwaway Claude profile (projects/ dirs,
     session jsonl, .claude.json, history.jsonl) plus a project folder in a
     tmpdir, run claude-mv as a subprocess against it, and assert on the
-    resulting on-disk state.
+    resulting on-disk state;
+  * conformance tests (TestFormatConformance) that read the REAL ~/.claude
+    and check the format the fixtures above imitate is still the format
+    Claude actually writes — otherwise a format change leaves every test
+    green while the tool silently breaks. Read-only; skipped if absent;
+  * a live test (TestAgainstRealClaude) that drives the real claude binary
+    and uses it as the oracle for its own cwd encoding;
+  * a UI test (TestResumePickerWithTmux) that runs `claude --resume` under
+    tmux at the moved path and reads the picker off the screen — the only
+    layer that checks the thing a user actually asks for, with a plain-mv
+    negative control proving it can fail.
 
-Everything runs against tmpdirs with CLAUDE_MV_RESTORE_ROOT redirected, so
-no test can reach the real ~/.claude or ~/.claude-mv.
+The last two are opt-in via CLAUDE_MV_LIVE_TEST=1, so the default suite
+shells out to nothing and stays fast. The first two run against tmpdirs
+with CLAUDE_MV_RESTORE_ROOT redirected, so no test can write to the real
+~/.claude or ~/.claude-mv; the third only ever reads it, and the live ones
+point Claude at a throwaway CLAUDE_CONFIG_DIR.
 """
 
+import glob
 import importlib.util
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -79,11 +95,117 @@ class TestHelpers(unittest.TestCase):
         out = cm.merge_entries({"model": "old"}, {"model": "new"})
         self.assertEqual(out["model"], "new")
 
+    def test_canonical_expands_and_normalizes(self):
+        home = os.path.realpath(os.path.expanduser("~"))
+        self.assertEqual(cm.canonical("~/code"), os.path.join(home, "code"))
+        self.assertEqual(cm.canonical("/a/b/"), "/a/b")
+        self.assertEqual(cm.canonical("/a/b/../c"), "/a/c")
+        cwd = os.path.realpath(os.getcwd())
+        self.assertEqual(cm.canonical("rel"), os.path.join(cwd, "rel"))
+
+    def test_canonical_resolves_ancestors_but_not_the_last_component(self):
+        tmp = os.path.realpath(tempfile.mkdtemp(prefix="canon-"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        real = os.path.join(tmp, "real")
+        os.makedirs(os.path.join(real, "proj"))
+        link = os.path.join(tmp, "link")
+        os.symlink(real, link)
+
+        # ancestor symlink: resolved, so enc() matches the recorded cwd
+        self.assertEqual(cm.canonical(os.path.join(link, "proj")),
+                         os.path.join(real, "proj"))
+        # last component is itself a symlink: left alone — mv renames the
+        # link, and the folder its sessions were recorded in stays put
+        self.assertEqual(cm.canonical(link), link)
+
     def test_config_json_path(self):
         home_claude = os.path.join(os.path.expanduser("~"), ".claude")
         self.assertEqual(cm.config_json_path(home_claude),
                          os.path.expanduser("~/.claude.json"))
         self.assertEqual(cm.config_json_path("/tmp/prof"), "/tmp/prof/.claude.json")
+
+
+# ── conformance: does the real profile still match our fixtures? ────────────
+
+REAL_PROFILE = os.path.expanduser("~/.claude")
+
+
+@unittest.skipUnless(os.path.isdir(REAL_PROFILE), "no ~/.claude here")
+class TestFormatConformance(unittest.TestCase):
+    """Read-only checks of the live profile against what the fixtures assume.
+
+    Everything else in this file tests claude-mv against *our model* of
+    Claude Code's on-disk format. If Claude ever changes that format, those
+    tests keep passing while the tool quietly stops working. These assert
+    the model still matches reality, so the next test run is what tells us.
+
+    Strictly read-only — nothing here writes, moves, or deletes.
+    """
+
+    def test_project_dir_names_are_enc_of_their_recorded_cwd(self):
+        """The load-bearing assumption: dir name == enc(session cwd)."""
+        root = os.path.join(REAL_PROFILE, "projects")
+        if not os.path.isdir(root):
+            self.skipTest("no projects/ dir")
+        checked, bad = 0, []
+        for name in sorted(os.listdir(root)):
+            d = os.path.join(root, name)
+            if not os.path.isdir(d):
+                continue
+            cwd = cm.jsonl_first_cwd(d)
+            if not cwd:
+                continue          # no session recorded a cwd; nothing to check
+            checked += 1
+            if cm.enc(cwd) != name:
+                bad.append(f"{name} holds sessions with cwd {cwd} "
+                           f"(encodes to {cm.enc(cwd)})")
+        if not checked:
+            self.skipTest("no project dir had a recorded cwd")
+        self.assertEqual(bad, [], "\n".join(
+            ["Claude's cwd→dirname encoding no longer matches enc():"] + bad))
+
+    def test_config_projects_is_a_map_keyed_by_absolute_path(self):
+        cfg = cm.config_json_path(REAL_PROFILE)
+        if not os.path.isfile(cfg):
+            self.skipTest("no config json")
+        with open(cfg, encoding="utf-8") as f:
+            projects = json.load(f).get("projects")
+        self.assertIsInstance(projects, dict, "projects map is gone")
+        self.assertTrue(projects, "projects map is empty")
+        self.assertTrue(all(k.startswith("/") for k in projects),
+                        "project keys are no longer absolute paths")
+
+    def test_history_entries_carry_an_absolute_project_path(self):
+        hist = os.path.join(REAL_PROFILE, "history.jsonl")
+        if not os.path.isfile(hist):
+            self.skipTest("no history.jsonl")
+        seen = 0
+        with open(hist, encoding="utf-8") as f:
+            for line in f:
+                try:
+                    obj = json.loads(line)
+                except ValueError:
+                    continue
+                p = obj.get("project")
+                if isinstance(p, str):
+                    self.assertTrue(p.startswith("/"))
+                    seen += 1
+                if seen >= 50:
+                    break
+        self.assertTrue(seen, "no entry had a 'project' field any more")
+
+    def test_live_session_records_still_carry_cwd_and_pid(self):
+        """What the live-session guard reads before it will let a move run."""
+        d = os.path.join(REAL_PROFILE, "sessions")
+        if not os.path.isdir(d):
+            self.skipTest("no sessions/ dir")
+        names = [n for n in os.listdir(d) if n.endswith(".json")]
+        if not names:
+            self.skipTest("no session records")
+        with open(os.path.join(d, names[0]), encoding="utf-8") as f:
+            obj = json.load(f)
+        self.assertIn("cwd", obj)
+        self.assertIn("pid", obj)
 
 
 # ── end-to-end scaffolding ──────────────────────────────────────────────────
@@ -92,7 +214,11 @@ class FixtureCase(unittest.TestCase):
     """Builds a disposable Claude profile + project tree per test."""
 
     def setUp(self):
-        self.tmp = tempfile.mkdtemp(prefix="claude-mv-test-")
+        # realpath: on macOS mkdtemp hands back /var/folders/… , which is a
+        # symlink to /private/var/… . Claude records the resolved path, so an
+        # unresolved fixture would be testing a path shape that never occurs
+        # (and would mask exactly the symlink bug canonical() fixes).
+        self.tmp = os.path.realpath(tempfile.mkdtemp(prefix="claude-mv-test-"))
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
         self.profile = os.path.join(self.tmp, "profile")
         self.projects = os.path.join(self.profile, "projects")
@@ -151,9 +277,11 @@ class FixtureCase(unittest.TestCase):
 
     # -- runner + assertions ------------------------------------------------
 
-    def run_mv(self, *args, expect=0, stdin=""):
+    def run_mv(self, *args, expect=0, stdin="", home=None):
         env = dict(os.environ, CLAUDE_MV_RESTORE_ROOT=self.restore_root)
         env.pop("CLAUDE_MV_FORCE_PROMPT", None)
+        if home:                      # for the ~ expansion test
+            env["HOME"] = home
         r = subprocess.run(
             [sys.executable, SCRIPT, "--profile", self.profile, *args],
             capture_output=True, text=True, input=stdin, env=env)
@@ -282,6 +410,106 @@ class TestPlainMove(FixtureCase):
         r = self.run_mv(os.path.join(self.code, "gone"),
                         os.path.join(self.code, "new"), expect=1)
         self.assertIn("--already-moved", r.stderr)
+
+
+# ── end-to-end: how src/dst are spelled ─────────────────────────────────────
+
+class TestPathForms(FixtureCase):
+    """Every spelling of the same folder must migrate the same history.
+
+    The fixture always records the canonical cwd (that is what Claude
+    writes); only the argv spelling varies.
+    """
+
+    def _fixture(self, name="proj"):
+        old = self.make_folder(name)
+        self.make_project(old)
+        self.add_config(old)
+        self.add_history(old)
+        self.write_fixture()
+        return old, os.path.join(self.code, "renamed")
+
+    def _assert_migrated(self, old, new):
+        self.assertTrue(os.path.isdir(new))
+        self.assertFalse(os.path.exists(old))
+        self.assertEqual(self.project_dirs(), [cm.enc(new)])
+        self.assertEqual(self.session_cwds(new), [new])
+        self.assertEqual(list(self.read_config()["projects"]), [new])
+        self.assertEqual(self.read_history()[0]["project"], new)
+
+    def test_trailing_slashes(self):
+        old, new = self._fixture()
+        self.run_mv(old + "/", new + "/")
+        self._assert_migrated(old, new)
+
+    def test_relative_paths(self):
+        old, new = self._fixture()
+        cwd = os.getcwd()
+        os.chdir(self.code)
+        self.addCleanup(os.chdir, cwd)
+        self.run_mv("proj", "renamed")
+        self._assert_migrated(old, new)
+
+    def test_dot_dot_segments(self):
+        old, new = self._fixture()
+        self.run_mv(os.path.join(self.code, "..", "code", "proj"), new)
+        self._assert_migrated(old, new)
+
+    def test_tilde(self):
+        # HOME is redirected at self.tmp, so ~ lands in the fixture tree.
+        old, new = self._fixture()
+        r = self.run_mv("~/code/proj", "~/code/renamed", home=self.tmp)
+        self.assertNotIn("no Claude project history", r.stdout)
+        self._assert_migrated(old, new)
+
+    def test_symlinked_ancestor_still_finds_the_history(self):
+        # The regression this whole class exists for: reached via a symlinked
+        # parent, the encoding used to miss and the move silently migrated
+        # nothing.
+        old, new = self._fixture()
+        link = os.path.join(self.tmp, "link")
+        os.symlink(self.code, link)
+
+        r = self.run_mv(os.path.join(link, "proj"),
+                        os.path.join(link, "renamed"))
+
+        self.assertNotIn("no Claude project history", r.stdout)
+        self._assert_migrated(old, new)
+
+    def test_symlinked_dst_dir_resolves_for_mv_into(self):
+        old, _ = self._fixture()
+        archive = os.path.join(self.tmp, "archive")
+        os.makedirs(archive)
+        link = os.path.join(self.tmp, "archive-link")
+        os.symlink(archive, link)
+
+        self.run_mv(old, link)          # mv-into-dir through a symlink
+
+        landed = os.path.join(archive, "proj")   # physical, not via the link
+        self.assertEqual(self.project_dirs(), [cm.enc(landed)])
+        self.assertEqual(self.session_cwds(landed), [landed])
+
+    def test_src_that_is_itself_a_symlink_warns_and_leaves_history(self):
+        old, _ = self._fixture()
+        link = os.path.join(self.code, "proj-link")
+        os.symlink(old, link)
+
+        r = self.run_mv(link, os.path.join(self.code, "moved-link"))
+
+        self.assertIn("is a symlink", r.stdout)
+        self.assertTrue(os.path.islink(os.path.join(self.code, "moved-link")))
+        self.assertTrue(os.path.isdir(old))          # real folder stayed
+        self.assertEqual(self.project_dirs(), [cm.enc(old)])  # history stayed
+
+    def test_folder_with_no_history_warns_but_still_moves(self):
+        self.write_fixture()
+        plain = self.make_folder("no-sessions-here")
+        new = os.path.join(self.code, "renamed")
+
+        r = self.run_mv(plain, new)
+
+        self.assertIn("no Claude project history", r.stdout)
+        self.assertTrue(os.path.isdir(new))          # the mv is not blocked
 
 
 # ── end-to-end: --already-moved ─────────────────────────────────────────────
@@ -505,6 +733,236 @@ class TestRestore(FixtureCase):
         r = self.run_mv("--restore")
         self.assertIn(self.restore_stamps()[0], r.stdout)
         self.assertIn("overwrite", r.stdout)
+
+
+# ── live: drive the real Claude Code binary ─────────────────────────────────
+
+def _claude_bin():
+    return (os.environ.get("CLAUDE_MV_CLAUDE_BIN") or shutil.which("claude")
+            or "/opt/homebrew/bin/claude")
+
+
+@unittest.skipUnless(os.environ.get("CLAUDE_MV_LIVE_TEST"),
+                     "set CLAUDE_MV_LIVE_TEST=1 to run against the real "
+                     "claude binary")
+@unittest.skipUnless(os.path.exists(_claude_bin()), "no claude binary")
+class TestAgainstRealClaude(FixtureCase):
+    """End-to-end with Claude Code itself, using it as the oracle.
+
+    Every other test asserts claude-mv against our *model* of the on-disk
+    format. This one has no model: real Claude writes the project dir, then
+    claude-mv migrates it, then real Claude runs again at the new path — and
+    if our re-keying matched what Claude would compute, Claude appends to
+    the very dir we produced instead of creating a second one beside it.
+
+    Costs nothing and needs no login: Claude lays down projects/<enc-cwd>/,
+    the session jsonl and the config *before* it ever checks credentials, so
+    an unauthenticated run still writes a genuine profile. Opt-in anyway —
+    the default suite stays hermetic and shells out to nothing.
+    """
+
+    def _run_claude(self, cwd):
+        """A real claude run in `cwd`, writing into the test profile."""
+        env = dict(os.environ, CLAUDE_CONFIG_DIR=self.profile)
+        subprocess.run([_claude_bin(), "-p", "Reply with exactly: OK"],
+                       cwd=cwd, capture_output=True, text=True, timeout=180,
+                       env=env)   # exit code ignored: unauthenticated is fine
+
+    def _project_dirs_with_sessions(self):
+        return sorted(n for n in os.listdir(self.projects)
+                      if os.path.isdir(os.path.join(self.projects, n))
+                      and any(f.endswith(".jsonl")
+                              for f in os.listdir(os.path.join(self.projects, n))))
+
+    def test_claude_finds_its_own_history_at_the_new_path(self):
+        old = self.make_folder("lipsum")
+        new = os.path.join(self.code, "foo")
+        self.write_fixture()
+
+        self._run_claude(old)
+        dirs = self._project_dirs_with_sessions()
+        self.assertEqual(dirs, [cm.enc(old)],
+                         "real Claude did not encode cwd the way enc() does")
+        before = len(os.listdir(os.path.join(self.projects, cm.enc(old))))
+
+        self.run_mv(old, new)
+
+        self.assertEqual(self._project_dirs_with_sessions(), [cm.enc(new)])
+        self.assertEqual(self.session_cwds(new), [new] * len(self.session_cwds(new)))
+        self.assertTrue(self.session_cwds(new), "no cwd lines survived")
+
+        # The oracle step: Claude runs again at the new path. If claude-mv
+        # picked the right dir name, Claude lands in it — no second dir.
+        self._run_claude(new)
+
+        self.assertEqual(self._project_dirs_with_sessions(), [cm.enc(new)],
+                         "Claude created a second project dir — claude-mv's "
+                         "re-keying disagrees with Claude's own encoding")
+        after = len(os.listdir(os.path.join(self.projects, cm.enc(new))))
+        self.assertGreater(after, before, "Claude wrote no new session file")
+
+
+@unittest.skipUnless(os.environ.get("CLAUDE_MV_LIVE_TEST"),
+                     "set CLAUDE_MV_LIVE_TEST=1 to drive the real claude UI")
+@unittest.skipUnless(os.path.exists(_claude_bin()), "no claude binary")
+@unittest.skipUnless(shutil.which("tmux"), "no tmux")
+@unittest.skipUnless(os.path.isdir(REAL_PROFILE), "no profile to source a "
+                                                  "real session from")
+class TestResumePickerWithTmux(FixtureCase):
+    """The end the user actually cares about: does `claude --resume` list it?
+
+    Everything else stops at "the files are re-keyed correctly". This drives
+    the real interactive picker under tmux and reads what Claude puts on the
+    screen at the new path.
+
+    Two things make it work without an API call or a login. The picker reads
+    session files off disk, so it renders fine unauthenticated. And a session
+    written by an unauthenticated run is *not* listed (no assistant turn, so
+    Claude filters it out) — which would make a naive version of this test
+    pass for the wrong reason, or fail for one. So it plants a genuine
+    session file copied from the real profile, cwd rewritten to the fixture,
+    rather than trying to generate one.
+
+    test_plain_mv_orphans_the_session is the negative control: same setup,
+    plain `mv` instead of claude-mv, and the picker must come up empty. If
+    that ever passes, this whole class has stopped proving anything.
+    """
+
+    ONBOARDING = {"hasCompletedOnboarding": True, "theme": "dark",
+                  "firstStartTime": "2026-01-01T00:00:00.000Z",
+                  "installMethod": "cask"}
+
+    def setUp(self):
+        super().setUp()
+        self._pane_n = 0
+
+    def _seed_profile(self, *trusted):
+        """Config that skips first-run onboarding and pre-trusts the folders."""
+        ver = subprocess.run([_claude_bin(), "--version"], capture_output=True,
+                             text=True).stdout.strip().split()[0]
+        cfg = dict(self.ONBOARDING, lastOnboardingVersion=ver, projects={
+            p: {"hasTrustDialogAccepted": True, "allowedTools": []}
+            for p in trusted})
+        with open(os.path.join(self.profile, ".claude.json"), "w") as f:
+            json.dump(cfg, f, indent=2)
+        with open(os.path.join(self.profile, "history.jsonl"), "w"):
+            pass
+
+    def _plant_real_session(self, cwd):
+        """Copy a genuine session into projects/<enc(cwd)>/; return its title.
+
+        Generated sessions can't be used: an unauthenticated run produces one
+        the picker won't list. A real file is the only offline way to get
+        content Claude considers resumable.
+        """
+        cands = [f for f in glob.glob(
+            os.path.join(REAL_PROFILE, "projects", "*", "*.jsonl"))
+            if 2_000 < os.path.getsize(f) < 200_000]
+        for src in sorted(cands, key=os.path.getsize):
+            title, lines = None, []
+            with open(src, encoding="utf-8", errors="replace") as fh:
+                raw = fh.readlines()
+            for line in raw:
+                try:
+                    obj = json.loads(line)
+                except ValueError:
+                    lines.append(line)
+                    continue
+                if isinstance(obj.get("cwd"), str):
+                    obj["cwd"] = cwd
+                title = obj.get("aiTitle") or title
+                lines.append(json.dumps(obj) + "\n")
+            if not title:
+                continue          # no aiTitle → nothing to match on screen
+            d = os.path.join(self.projects, cm.enc(cwd))
+            os.makedirs(d, exist_ok=True)
+            with open(os.path.join(d, os.path.basename(src)), "w") as f:
+                f.writelines(lines)
+            return title
+        self.skipTest("no real session with an aiTitle to plant")
+
+    def _picker_pane(self, cwd, wait_for, timeout=60):
+        """Open `claude --resume` in cwd under tmux; return the pane text."""
+        self._pane_n += 1
+        sess = f"cmv-{os.getpid()}-{self._pane_n}"
+        cmd = (f"CLAUDE_CONFIG_DIR={shlex.quote(self.profile)} "
+               f"{shlex.quote(_claude_bin())} --resume; sleep 120")
+        subprocess.run(["tmux", "new-session", "-d", "-s", sess,
+                        "-x", "200", "-y", "40", "-c", cwd, cmd],
+                       check=True, capture_output=True)
+        self.addCleanup(subprocess.run, ["tmux", "kill-session", "-t", sess],
+                        capture_output=True)
+
+        def pane():
+            return subprocess.run(["tmux", "capture-pane", "-t", sess, "-p"],
+                                  capture_output=True, text=True).stdout
+
+        def close(out):
+            """Kill the picker before returning.
+
+            Not just tidiness: `claude --resume` is a real live session, so
+            leaving it up makes claude-mv's own liveness guard (correctly)
+            refuse the next move in this test.
+            """
+            subprocess.run(["tmux", "kill-session", "-t", sess],
+                           capture_output=True)
+            for _ in range(20):        # wait for the pid to actually go
+                if subprocess.run(["tmux", "has-session", "-t", sess],
+                                  capture_output=True).returncode != 0:
+                    break
+                time.sleep(0.5)
+            return out
+
+        deadline, trusted = time.time() + timeout, False
+        while time.time() < deadline:
+            time.sleep(1)
+            out = pane()
+            if not trusted and "trust this folder" in out:
+                # Belt and braces: the seeded config normally pre-empts this.
+                subprocess.run(["tmux", "send-keys", "-t", sess, "Enter"])
+                trusted = True
+                continue
+            if any(w in out for w in wait_for):
+                time.sleep(2)     # let the list settle before reading it
+                return close(pane())
+        return close(pane())
+
+    def test_resume_picker_lists_the_session_at_the_new_path(self):
+        old = self.make_folder("lipsum")
+        new = os.path.join(self.code, "foo")
+        # Seed only the source: the destination must be untouched, or
+        # claude-mv sees a pre-existing config key and reports a conflict.
+        # hasTrustDialogAccepted rides along through the migration anyway.
+        self._seed_profile(old)
+        title = self._plant_real_session(old)
+
+        before = self._picker_pane(old, [title, "No conversations"])
+        self.assertIn(title, before,
+                      "planted session was not listed even before the move — "
+                      "fixture problem, not a claude-mv problem")
+
+        self.run_mv(old, new)
+
+        after = self._picker_pane(new, [title, "No conversations"])
+        self.assertIn(title, after,
+                      "claude --resume at the new path does not list the "
+                      "moved session")
+        self.assertNotIn("No conversations", after)
+
+    def test_plain_mv_orphans_the_session(self):
+        """Negative control — proves the test above can fail."""
+        old = self.make_folder("lipsum")
+        new = os.path.join(self.code, "foo")
+        self._seed_profile(old)
+        title = self._plant_real_session(old)
+
+        os.rename(old, new)        # what claude-mv exists to improve on
+
+        after = self._picker_pane(new, [title, "No conversations"])
+        self.assertNotIn(title, after,
+                         "a plain mv appeared to keep the history — the "
+                         "picker assertions prove nothing")
+        self.assertIn("No conversations", after)
 
 
 if __name__ == "__main__":
