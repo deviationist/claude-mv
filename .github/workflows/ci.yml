@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Cancel superseded runs on the same ref (e.g. rapid re-pushes to a PR).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # Both OSes to completion: claude-mv is all path handling, and the two
+      # platforms differ in exactly the place that matters — macOS resolves
+      # /var and /tmp through symlinks, Linux does not. That asymmetry is
+      # what canonical() exists for, so it must be exercised on both.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tool versions
+        run: |
+          python3 --version
+          zsh --version || true
+
+      - name: Run test suite
+        # Hermetic by default: the live layers need CLAUDE_MV_LIVE_TEST=1 and
+        # the conformance layer needs a real ~/.claude, so both skip on CI.
+        # Everything else runs against tmpdirs with the restore root
+        # redirected — no network, no claude binary, nothing outside the
+        # runner's temp space.
+        run: python3 tests/test_claude_mv.py -v

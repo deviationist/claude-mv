@@ -1,0 +1,9 @@
+# Local per-machine config — claude-mv auto-loads a .env beside the script.
+.env
+
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc

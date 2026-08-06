@@ -18,7 +18,7 @@
 #                    old path: move nothing, just re-key the history onto the
 #                    new path. src must be gone, dst must already exist.
 #
-# Env (claude/.env one level up, see .env.example):
+# Env (.env beside this script, gitignored — see .env.example):
 #   CLAUDE_PROFILE_DIRS          profile dirs to migrate. Default: ~/.claude,
 #                                plus ~/.claude-personal when it exists.
 #   CLAUDE_MV_OVERWRITE_BACKUP   keep the restore point after a successful
@@ -33,13 +33,13 @@
 
 claude-mv() {
   emulate -L zsh
-  # Resolve this function's defining file → its own claude-mv/ dir (holds
-  # claude-mv.py + tests/), whose parent claude/ holds the shared .env. Both
-  # are found regardless of where the repo is checked out.
+  # Resolve this function's defining file → the repo root, which holds
+  # claude-mv.py, tests/ and the per-machine .env. Found regardless of where
+  # the repo is checked out.
   local _dir="${${(%):-%x}:A:h}"
   local -a CLAUDE_PROFILE_DIRS
   local CLAUDE_MV_OVERWRITE_BACKUP CLAUDE_MV_RESTORE_ROOT
-  source "${_dir:h}/.env" 2>/dev/null
+  source "${_dir}/.env" 2>/dev/null
   if (( ! ${#CLAUDE_PROFILE_DIRS[@]} )); then
     CLAUDE_PROFILE_DIRS=("$HOME/.claude")
     [[ -d "$HOME/.claude-personal" ]] && CLAUDE_PROFILE_DIRS+=("$HOME/.claude-personal")
