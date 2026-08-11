@@ -36,6 +36,12 @@ Code history so `claude --resume` still finds the sessions at the new path.
   keyed on `src`.
 - Exit codes: `0` ok · `1` refused/aborted · `2` conflict needing a policy ·
   `3` failed mid-migration (restore point kept, named in the error).
+- **Every line printed is a human-facing report** — nothing parses claude-mv's
+  output, so it is coloured throughout, on both streams, and the run closes
+  with a tally of the stores it touched. Colour is a pure overlay: off when
+  piped, honouring `NO_COLOR`, forced by `CLAUDE_MV_COLOR=always|never`, and
+  with it off every line is byte-identical to the uncoloured original — which
+  is what lets the tests keep asserting on plain substrings.
 
 ## Layout
 
@@ -46,6 +52,11 @@ Code history so `claude --resume` still finds the sessions at the new path.
   real `~/.claude`, live against the `claude` binary, resume UI under tmux).
   Layers 4–5 opt in with `CLAUDE_MV_LIVE_TEST=1`; they need no auth and spend
   no tokens.
+- `tools/generate-readme-svg.zsh` → `assets/*.svg` — the README images. Runs
+  the tool unmodified against a throwaway `$HOME` and converts the ANSI to an
+  SVG terminal grid, so the text in them is real output. Sibling of the same
+  script in claude-profile / claude-usage / claude-statusline; keep the four
+  roughly in sync.
 
 ## Working on this
 
@@ -56,3 +67,11 @@ Code history so `claude --resume` still finds the sessions at the new path.
   not the test.
 - When changing path handling, add the case to `TestPathForms`: every spelling
   of one folder must migrate identically.
+- New output goes through `c()` / `emsg()` / `wmsg()`, never a raw escape, and
+  keeps the palette's meaning: cyan = the path/name/key being acted on, bold =
+  the identifier or count worth reading, dim = asides, green = did/safe,
+  yellow = would/warning, red = error/destructive. Pad and align *before*
+  colouring — an escape counts toward `len()` but not toward what is drawn.
+- Anything that changes the report, the conflict prompt or the restore screen
+  means rerunning `tools/generate-readme-svg.zsh` and committing the new SVGs
+  with the README.
