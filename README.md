@@ -157,9 +157,26 @@ All optional — see [`.env.example`](.env.example).
 
 | Variable | Default |
 |---|---|
-| `CLAUDE_PROFILE_DIRS` | `~/.claude`, plus `~/.claude-personal` when it exists |
+| `CLAUDE_PROFILE_DIRS` | asks [claude-profile](https://github.com/deviationist/claude-profile) when installed, else `~/.claude` plus `~/.claude-personal` when it exists |
 | `CLAUDE_MV_OVERWRITE_BACKUP` | `1` — keep the restore point after an overwrite |
 | `CLAUDE_MV_RESTORE_ROOT` | `~/.claude-mv/restore` |
+
+### Which profiles get migrated
+
+Unset, `CLAUDE_PROFILE_DIRS` is resolved in this order:
+
+1. **[claude-profile](https://github.com/deviationist/claude-profile), if
+   installed** — where that juggler is present it is the machine's registry of
+   Claude config dirs, so a profile added there is migrated here with no second
+   edit. `claude-mv` has no dependency on it: it is found the same three ways
+   `claude-usage` looks (`$CLAUDE_PROFILE_SCRIPT`, then a function or binary on
+   `PATH`, then a sibling clone next to this repo), it is asked with the
+   side-effect-free `list` porcelain, and any failure falls through silently.
+2. **`~/.claude`**, plus **`~/.claude-personal`** when it exists.
+
+Setting `CLAUDE_PROFILE_DIRS` in `.env` pins the list and skips both — which
+also means a profile it omits is not migrated, and that history stays keyed on
+the old path without a word about it. Prefer leaving it unset.
 
 Output is coloured when stdout is a terminal and plain when it is piped.
 `NO_COLOR` turns it off; `CLAUDE_MV_COLOR=always|never` overrides both. Colour

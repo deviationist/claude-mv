@@ -46,7 +46,13 @@ Code history so `claude --resume` still finds the sessions at the new path.
 ## Layout
 
 - `claude-mv.zsh` — thin wrapper: resolves profile dirs, sources the
-  gitignored `.env` beside it, execs the python.
+  gitignored `.env` beside it, execs the python. Profile dirs come from
+  `CLAUDE_PROFILE_DIRS` in `.env` if set, else **claude-profile** when that is
+  installed (`_claude_mv_profile_cmd` locates it exactly as claude-usage's
+  bridge does — `$CLAUDE_PROFILE_SCRIPT`, function/binary on `PATH`, sibling
+  clone — and asks the side-effect-free `list` porcelain), else `~/.claude`
+  plus `~/.claude-personal`. The bridge is soft: every failure path falls
+  through, and nothing else in the repo knows claude-profile exists.
 - `claude-mv.py` — all the logic; stdlib only, no deps.
 - `tests/test_claude_mv.py` — five layers (unit, e2e, conformance against the
   real `~/.claude`, live against the `claude` binary, resume UI under tmux).
