@@ -173,25 +173,28 @@ seed
 move_out=$(demoize "$(${=cm} $profiles "$fakehome/code/lipsum" "$fakehome/code/foo" 2>&1)")
 
 # 2. the destination already has history: conflicts are listed, the policy is
-#    asked for, and `c` (consolidate) is answered. One profile only — the image
-#    is about the conflict screen, and the second profile just repeats section
-#    shape the move image already showed.
+#    asked for, and `c` (consolidate) is answered. Both profiles again, so the
+#    drawn command line means the same machine as the image above it.
 seed; seed_destination_history
-conflict_out=$(CLAUDE_MV_FORCE_PROMPT=1 ${=cm} --profile "$fakehome/.claude" \
+conflict_out=$(CLAUDE_MV_FORCE_PROMPT=1 ${=cm} $profiles \
                  "$fakehome/code/lipsum" "$fakehome/code/foo" 2>&1 <<< 'c')
 conflict_out=$(demoize "$(answer "$conflict_out" 'choice [a]: ' c)")
 
-# 3. rolling one back. The move that produced the restore point is run first
-#    (with --on-conflict overwrite, the mode that keeps its restore point on
-#    success) and thrown away; only the two --restore screens are captured.
+# 3. rolling one back, end to end. The move that produces the restore point is
+#    shown rather than hidden: `overwrite` is the one mode that KEEPS its
+#    restore point on success (it is the archive of the history it discarded),
+#    which is both why the listing below reads [overwrite] and the only way
+#    there is a point to list at all — every other mode cleans its own up.
+#    --restore takes no --profile: it returns before profiles are resolved.
 seed; seed_destination_history
-${=cm} --profile "$fakehome/.claude" --on-conflict overwrite \
-       "$fakehome/code/lipsum" "$fakehome/code/foo" >/dev/null 2>&1
-restore_list=$(demoize "$(${=cm} $profiles --restore 2>&1)")
-restore_run=$(CLAUDE_MV_FORCE_PROMPT=1 ${=cm} $profiles --restore latest 2>&1 <<< 'y')
+restore_move=$(demoize "$(${=cm} $profiles --on-conflict overwrite \
+                            "$fakehome/code/lipsum" "$fakehome/code/foo" 2>&1)")
+restore_list=$(demoize "$(${=cm} --restore 2>&1)")
+restore_run=$(CLAUDE_MV_FORCE_PROMPT=1 ${=cm} --restore latest 2>&1 <<< 'y')
 restore_run=$(demoize "$(answer "$restore_run" 'restore? [y/N]: ' y)")
 
-[[ -n $move_out && -n $conflict_out && -n $restore_list && -n $restore_run ]] || {
+[[ -n $move_out && -n $conflict_out && -n $restore_move && -n $restore_list \
+   && -n $restore_run ]] || {
   print -u2 "generate-readme-svg: sandbox produced no output — aborting"; exit 1 }
 [[ $move_out == *"done"* ]] || {
   print -u2 "generate-readme-svg: the move did not succeed — aborting"; exit 1 }
@@ -352,13 +355,15 @@ emit_svg() {
 typeset -a move_lines conflict_lines restore_lines
 move_lines=("$(cmdline 'claude-mv ~/code/lipsum ~/code/foo')" '' "${(@f)move_out}")
 conflict_lines=("$(cmdline 'claude-mv ~/code/lipsum ~/code/foo')" '' "${(@f)conflict_out}")
-restore_lines=("$(cmdline 'claude-mv --restore')" '' "${(@f)restore_list}" ''
+restore_lines=("$(cmdline 'claude-mv --on-conflict overwrite ~/code/lipsum ~/code/foo')" ''
+               "${(@f)restore_move}" ''
+               "$(cmdline 'claude-mv --restore')" '' "${(@f)restore_list}" ''
                "$(cmdline 'claude-mv --restore latest')" '' "${(@f)restore_run}")
 
 # ---- write -----------------------------------------------------------------
 MOVE_ARIA='claude-mv moving a folder: a restore point is taken, the folder is moved, then each Claude profile is re-keyed in turn — project dirs renamed, session files rewritten, config keys and history entries updated — closing with a green done line and a tally'
-CONFLICT_ARIA='claude-mv finding history already at the destination: the conflicting project dir and config key are listed, four resolution policies are offered, consolidate is chosen, and the merge is reported per store'
-RESTORE_ARIA='claude-mv --restore listing one restore point, then rolling it back: the folder move-back and the number of dirs and files to restore are previewed, confirmed, and reported done'
+CONFLICT_ARIA='claude-mv finding history already at the destination: the conflicting project dir and config key are listed, four resolution policies are offered, consolidate is chosen, and the merge is reported per store across both profiles'
+RESTORE_ARIA='an overwrite move keeping its restore point as the archive of the history it discarded, that point then listed by claude-mv --restore, and finally rolled back: the folder move-back and the number of dirs and files to restore are previewed, confirmed, and reported done'
 
 if [[ -n ${1:-} ]]; then
   emit_svg move_lines     "$1" 'claude-mv' "$MOVE_ARIA";     print "wrote $1"

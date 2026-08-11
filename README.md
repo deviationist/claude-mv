@@ -14,7 +14,7 @@ anywhere on disk.
 configured profile.
 
 <p align="center">
-  <img src="assets/move-dcabe2.svg" alt="claude-mv moving a folder: a restore point is taken, the folder is moved, then each Claude profile is re-keyed in turn — project dirs renamed, session files rewritten, config keys and history entries updated — closing with a green done line and a tally">
+  <img src="assets/move-d58fd7.svg" alt="claude-mv moving a folder: a restore point is taken, the folder is moved, then each Claude profile is re-keyed in turn — project dirs renamed, session files rewritten, config keys and history entries updated — closing with a green done line and a tally">
 </p>
 
 (The image is genuine output — `tools/generate-readme-svg.zsh` seeds a sandbox
@@ -78,7 +78,7 @@ interactively on a tty, or supplied with `--on-conflict`:
 | `abort` | do nothing at all |
 
 <p align="center">
-  <img src="assets/conflict-dcabe2.svg" alt="claude-mv finding history already at the destination: the conflicting project dir and config key are listed, four resolution policies are offered, consolidate is chosen, and the merge is reported per store">
+  <img src="assets/conflict-d58fd7.svg" alt="claude-mv finding history already at the destination: the conflicting project dir and config key are listed, four resolution policies are offered, consolidate is chosen, and the merge is reported per store across both profiles">
 </p>
 
 Because conflicts are resolved before the move, `abort` really does mean
@@ -111,10 +111,13 @@ nothing happened.
 - **No silent no-ops.** If nothing is keyed on `src`, it says so instead of
   printing a green "done" over a move that migrated nothing.
 
-Rolling one back — the plan is previewed and confirmed before anything moves:
+`overwrite` is the one mode that *keeps* its restore point on success — it is
+the archive of the history it discarded, and so the only mode that leaves a
+point to roll back to. End to end, that is: the move, the listing, the undo.
+Nothing moves until the plan has been previewed and confirmed.
 
 <p align="center">
-  <img src="assets/restore-dcabe2.svg" alt="claude-mv --restore listing one restore point, then rolling it back: the folder move-back and the number of dirs and files to restore are previewed, confirmed, and reported done">
+  <img src="assets/restore-d58fd7.svg" alt="an overwrite move keeping its restore point as the archive of the history it discarded, that point then listed by claude-mv --restore, and finally rolled back: the folder move-back and the number of dirs and files to restore are previewed, confirmed, and reported done">
 </p>
 
 ## What gets migrated

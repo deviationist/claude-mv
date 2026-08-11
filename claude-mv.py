@@ -890,13 +890,16 @@ def main() -> int:
         .strip().lower() not in ("0", "false", "no", "off")
     if rp:
         if has_conflicts and mode == "overwrite" and keep_backup:
+            # One command per line: joined with a separator this ran past
+            # 120 columns and wrapped mid-path on any normal terminal, which
+            # is a poor way to present two commands meant to be copied.
             print("\n" + c("✅ done", "green", "bold") +
                   (f" — {summary}" if summary else "") + "\n" +
                   c("   discarded destination history is kept in the restore "
                     "point:", "dim") + f"\n   {c(rp, 'cyan')}\n" +
-                  c(f"   undo everything: claude-mv --restore "
-                    f"{os.path.basename(rp)}  ·  discard for good: rm -rf "
-                    f"{rp}", "dim"))
+                  c("   undo everything:  ", "dim") +
+                  f"claude-mv --restore {os.path.basename(rp)}\n" +
+                  c("   discard for good: ", "dim") + f"rm -rf {rp}")
             return 0
         shutil.rmtree(rp)
     print("\n" + c("✅ done", "green", "bold") +
