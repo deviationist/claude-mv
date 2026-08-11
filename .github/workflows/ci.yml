@@ -25,10 +25,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The Linux runner image ships no zsh, and claude-mv's wrapper — which
+      # decides which profiles get migrated — is zsh. Without this the wrapper
+      # layer skips here, silently, and the feature is only ever tested on one
+      # of the two platforms.
+      - name: Install zsh
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
+
+      # `zsh --version` without a `|| true`: the wrapper layer skips itself
+      # when zsh is absent, and a skip is quiet — so a runner image that drops
+      # zsh would take a whole layer with it and leave the build green. Failing
+      # here is the guard.
       - name: Tool versions
         run: |
           python3 --version
-          zsh --version || true
+          zsh --version
 
       - name: Run test suite
         # Hermetic by default: the live layers need CLAUDE_MV_LIVE_TEST=1 and

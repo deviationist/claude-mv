@@ -4,7 +4,7 @@
     python3 claude/claude-mv/tests/test_claude_mv.py          # or -v
     python3 -m unittest discover claude/claude-mv/tests
 
-Four layers, each closing a gap the one before it can't see:
+Seven layers, each closing a gap the ones before it can't see:
 
   * unit tests on the pure helpers (path encoding, canonicalization, config
     merging), loaded straight out of claude-mv.py;
@@ -12,6 +12,13 @@ Four layers, each closing a gap the one before it can't see:
     session jsonl, .claude.json, history.jsonl) plus a project folder in a
     tmpdir, run claude-mv as a subprocess against it, and assert on the
     resulting on-disk state;
+  * multi-profile tests (TestMultiProfile) that run SEVERAL profiles at once,
+    in the two config layouts a real machine mixes — the end-to-end harness
+    passes exactly one --profile, so nothing there can see a second profile
+    being skipped or written into the wrong file;
+  * wrapper tests (TestWrapperProfileResolution) on claude-mv.zsh, which picks
+    which profiles the python is even told about — a decision every layer
+    above bypasses by passing --profile itself. Needs zsh; skipped without it;
   * conformance tests (TestFormatConformance) that read the REAL ~/.claude
     and check the format the fixtures above imitate is still the format
     Claude actually writes — otherwise a format change leaves every test
@@ -733,6 +740,311 @@ class TestRestore(FixtureCase):
         r = self.run_mv("--restore")
         self.assertIn(self.restore_stamps()[0], r.stdout)
         self.assertIn("overwrite", r.stdout)
+
+
+# ── multi-profile: is every configured profile actually migrated? ───────────
+
+class TestMultiProfile(unittest.TestCase):
+    """Several profiles in one run.
+
+    FixtureCase above passes exactly one --profile, so nothing there can see a
+    second one being skipped, half-migrated, or written into the wrong file —
+    and "across every configured profile" is a claim the README makes.
+
+    Laid out the way a real machine is, because the shapes differ: $HOME/.claude
+    keeps its config at $HOME/.claude.json, while every other profile keeps its
+    own inside the profile dir (the CLAUDE_CONFIG_DIR layout). A tool that wrote
+    both to one place would still pass a single-profile fixture.
+    """
+
+    def setUp(self):
+        self.tmp = os.path.realpath(tempfile.mkdtemp(prefix="claude-mv-multi-"))
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.home = os.path.join(self.tmp, "home")
+        self.code = os.path.join(self.home, "code")
+        os.makedirs(self.code)
+        self.restore_root = os.path.join(self.tmp, "restore")
+
+    # -- fixture ------------------------------------------------------------
+
+    def profile(self, name):
+        d = os.path.join(self.home, name)
+        os.makedirs(os.path.join(d, "projects"))
+        return d
+
+    def cfg_path(self, profile):
+        """Mirror of claude-mv's own rule, computed here rather than imported:
+        if the test agreed with the tool by construction it could not catch the
+        tool moving the goalposts."""
+        return (os.path.join(self.home, ".claude.json")
+                if profile == os.path.join(self.home, ".claude")
+                else os.path.join(profile, ".claude.json"))
+
+    def folder(self, name):
+        p = os.path.join(self.code, name)
+        os.makedirs(p, exist_ok=True)
+        return p
+
+    def seed(self, profile, cwd, sessions=("s1",)):
+        """Key `cwd` into all four of this profile's stores."""
+        d = os.path.join(profile, "projects", cm.enc(cwd))
+        os.makedirs(d, exist_ok=True)
+        for sid in sessions:
+            with open(os.path.join(d, sid + ".jsonl"), "w") as f:
+                f.write(json.dumps({"type": "user", "cwd": cwd,
+                                    "sessionId": sid}) + "\n")
+        cfg = self.cfg_path(profile)
+        data = {"projects": {}}
+        if os.path.isfile(cfg):
+            with open(cfg) as f:
+                data = json.load(f)
+        data["projects"][cwd] = {"allowedTools": [],
+                                 "hasTrustDialogAccepted": True}
+        with open(cfg, "w") as f:
+            json.dump(data, f)
+        with open(os.path.join(profile, "history.jsonl"), "a") as f:
+            f.write(json.dumps({"display": "hi", "project": cwd}) + "\n")
+
+    def run_mv(self, profiles, *args, expect=0):
+        prof = [a for p in profiles for a in ("--profile", p)]
+        env = dict(os.environ, HOME=self.home,
+                   CLAUDE_MV_RESTORE_ROOT=self.restore_root)
+        env.pop("CLAUDE_MV_FORCE_PROMPT", None)
+        r = subprocess.run([sys.executable, SCRIPT, *prof, *args],
+                           capture_output=True, text=True, env=env)
+        self.assertEqual(
+            r.returncode, expect,
+            "exit %s != %s\n--- stdout ---\n%s\n--- stderr ---\n%s"
+            % (r.returncode, expect, r.stdout, r.stderr))
+        return r
+
+    # -- readers ------------------------------------------------------------
+
+    def project_dirs(self, profile):
+        return sorted(os.listdir(os.path.join(profile, "projects")))
+
+    def keys(self, profile):
+        with open(self.cfg_path(profile)) as f:
+            return sorted(json.load(f)["projects"])
+
+    def history_projects(self, profile):
+        with open(os.path.join(profile, "history.jsonl")) as f:
+            return [json.loads(line)["project"] for line in f if line.strip()]
+
+    def session_cwds(self, profile):
+        out = []
+        root = os.path.join(profile, "projects")
+        for d in sorted(os.listdir(root)):
+            for name in sorted(os.listdir(os.path.join(root, d))):
+                with open(os.path.join(root, d, name)) as f:
+                    for line in f:
+                        cwd = json.loads(line).get("cwd")
+                        if cwd:
+                            out.append(cwd)
+        return out
+
+    def snapshot(self, root):
+        """Every file under `root` as path → bytes, for proving non-interference."""
+        out = {}
+        for dirpath, _, names in os.walk(root):
+            for n in names:
+                p = os.path.join(dirpath, n)
+                with open(p, "rb") as f:
+                    out[os.path.relpath(p, root)] = f.read()
+        return out
+
+    # -- tests --------------------------------------------------------------
+
+    def test_every_profile_is_migrated(self):
+        work, personal = self.profile(".claude"), self.profile(".claude-personal")
+        old, new = self.folder("lipsum"), os.path.join(self.code, "foo")
+        self.seed(work, old, sessions=("s1", "s2"))
+        self.seed(personal, old)
+
+        self.run_mv([work, personal], old, new)
+
+        for p in (work, personal):
+            self.assertEqual(self.project_dirs(p), [cm.enc(new)], p)
+            self.assertEqual(self.keys(p), [new], p)
+            self.assertEqual(self.history_projects(p), [new], p)
+            self.assertEqual(set(self.session_cwds(p)), {new}, p)
+        # Each profile's key landed in ITS OWN config file, not one shared one.
+        self.assertEqual(self.keys(work), [new])
+        self.assertTrue(os.path.isfile(os.path.join(self.home, ".claude.json")))
+        self.assertTrue(os.path.isfile(os.path.join(personal, ".claude.json")))
+        self.assertFalse(os.path.exists(os.path.join(work, ".claude.json")))
+
+    def test_a_profile_that_never_saw_the_folder_is_left_byte_identical(self):
+        work, personal = self.profile(".claude"), self.profile(".claude-personal")
+        old, new = self.folder("lipsum"), os.path.join(self.code, "foo")
+        self.seed(work, old)
+        self.seed(personal, self.folder("unrelated"))
+
+        before = self.snapshot(personal)
+        self.run_mv([work, personal], old, new)
+
+        self.assertEqual(self.project_dirs(work), [cm.enc(new)])
+        self.assertEqual(self.snapshot(personal), before)
+
+    def test_one_policy_resolves_each_profile_on_its_own_terms(self):
+        """A conflict in one profile does not change what happens in another.
+
+        `overwrite` is chosen once for the run, but only `work` has history at
+        the destination; `personal` has a plain rename to do and must still do
+        exactly that.
+        """
+        work, personal = self.profile(".claude"), self.profile(".claude-personal")
+        old, new = self.folder("lipsum"), os.path.join(self.code, "foo")
+        self.seed(work, old, sessions=("moved",))
+        self.seed(work, new, sessions=("doomed",))   # destination history
+        self.seed(personal, old, sessions=("mine",))
+
+        self.run_mv([work, personal], "--on-conflict", "overwrite", old, new)
+
+        self.assertEqual(self.project_dirs(work), [cm.enc(new)])
+        self.assertEqual(
+            sorted(os.listdir(os.path.join(work, "projects", cm.enc(new)))),
+            ["moved.jsonl"], "the destination's own history should be gone")
+        self.assertEqual(self.project_dirs(personal), [cm.enc(new)])
+        self.assertEqual(
+            sorted(os.listdir(os.path.join(personal, "projects", cm.enc(new)))),
+            ["mine.jsonl"])
+
+    def test_nothing_keyed_anywhere_warns_instead_of_claiming_success(self):
+        work, personal = self.profile(".claude"), self.profile(".claude-personal")
+        old, new = self.folder("lipsum"), os.path.join(self.code, "foo")
+        self.seed(work, self.folder("elsewhere"))
+
+        r = self.run_mv([work, personal], "-n", old, new)
+        self.assertIn("no Claude project history", r.stdout)
+
+
+# ── wrapper: which profiles the zsh layer decides to pass ───────────────────
+
+ZSH = shutil.which("zsh")
+
+
+@unittest.skipUnless(ZSH, "zsh not installed")
+class TestWrapperProfileResolution(unittest.TestCase):
+    """claude-mv.zsh chooses WHICH profiles the python is told about.
+
+    Invisible to every layer above, all of which pass --profile themselves. The
+    order is: CLAUDE_PROFILE_DIRS from .env, else claude-profile when it is
+    installed, else ~/.claude plus ~/.claude-personal.
+
+    The wrapper is copied into a tmpdir beside a copy of claude-mv.py, so it
+    reads a .env under our control and finds no sibling claude-profile clone —
+    the real checkout would supply both and mask the case being tested.
+    """
+
+    STUB = ("#!/bin/sh\n"
+            "[ \"$1\" = list ] || exit 1\n"
+            "printf 'work\\t~/.claude\\tactive\\n'\n"
+            "printf 'personal\\t~/.claude-personal\\t\\n'\n"
+            "printf 'client\\t~/.claude-client\\t\\n'\n")
+
+    def setUp(self):
+        self.tmp = os.path.realpath(tempfile.mkdtemp(prefix="claude-mv-zsh-"))
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.repo = os.path.join(self.tmp, "repo")
+        os.makedirs(self.repo)
+        here = os.path.dirname(SCRIPT)
+        shutil.copy2(SCRIPT, self.repo)
+        shutil.copy2(os.path.join(here, "claude-mv.zsh"), self.repo)
+
+        self.home = os.path.join(self.tmp, "home")
+        for d in (".claude", ".claude-personal", ".claude-client", "code/proj"):
+            os.makedirs(os.path.join(self.home, d))
+
+        self.bin = os.path.join(self.tmp, "bin")
+        os.makedirs(self.bin)
+        self.stub = os.path.join(self.bin, "claude-profile")
+        self.write_stub(self.STUB)
+
+    def write_stub(self, body):
+        with open(self.stub, "w") as f:
+            f.write(body)
+        os.chmod(self.stub, 0o755)
+
+    def resolve(self, prelude="", dotenv=None, stub_on_path=False, **env_extra):
+        """The profile dirs a real `claude-mv -n` ends up migrating, read back
+        off its own report — the wrapper's decision as the python received it,
+        not a re-implementation of the lookup."""
+        dotenv_path = os.path.join(self.repo, ".env")
+        if dotenv is None:
+            if os.path.exists(dotenv_path):
+                os.remove(dotenv_path)
+        else:
+            with open(dotenv_path, "w") as f:
+                f.write(dotenv)
+        env = dict(os.environ, HOME=self.home,
+                   CLAUDE_MV_RESTORE_ROOT=os.path.join(self.tmp, "restore"))
+        for k in ("CLAUDE_PROFILE_SCRIPT", "CLAUDE_MV_FORCE_PROMPT"):
+            env.pop(k, None)
+        env.update(env_extra)
+        if stub_on_path:
+            env["PATH"] = self.bin + os.pathsep + env["PATH"]
+        script = "%s\nsource %s/claude-mv.zsh\nclaude-mv -n %s %s\n" % (
+            prelude, shlex.quote(self.repo),
+            shlex.quote(os.path.join(self.home, "code/proj")),
+            shlex.quote(os.path.join(self.home, "code/renamed")))
+        r = subprocess.run([ZSH, "-c", script], capture_output=True, text=True,
+                           env=env)
+        marker = "\u2500\u2500 profile "
+        dirs = [ln.split(marker, 1)[1].strip()
+                for ln in r.stdout.splitlines() if marker in ln]
+        return [os.path.relpath(d, self.home) for d in dirs]
+
+    DEFAULT = [".claude", ".claude-personal"]
+    VIA_PROFILE = [".claude", ".claude-personal", ".claude-client"]
+
+    def test_falls_back_to_the_built_in_default(self):
+        self.assertEqual(self.resolve(), self.DEFAULT)
+
+    def test_uses_claude_profile_when_it_is_a_binary_on_path(self):
+        self.assertEqual(self.resolve(stub_on_path=True), self.VIA_PROFILE)
+
+    def test_uses_claude_profile_when_it_is_a_zsh_function(self):
+        """The shape it actually has in an interactive shell — and the one a
+        $commands lookup would miss entirely."""
+        prelude = "claude-profile() { %s \"$@\" }" % shlex.quote(self.stub)
+        self.assertEqual(self.resolve(prelude=prelude), self.VIA_PROFILE)
+
+    def test_claude_profile_script_override_is_honoured(self):
+        py = os.path.join(self.tmp, "cp.py")
+        with open(py, "w") as f:
+            f.write("print('solo\\t~/.claude-client\\t')\n")
+        self.assertEqual(self.resolve(CLAUDE_PROFILE_SCRIPT=py),
+                         [".claude-client"])
+
+    def test_a_claude_profile_script_that_is_not_there_means_not_installed(self):
+        """Authoritative: the other candidates are not consulted, even with the
+        stub sitting on PATH."""
+        self.assertEqual(
+            self.resolve(stub_on_path=True,
+                         CLAUDE_PROFILE_SCRIPT=os.path.join(self.tmp, "nope.py")),
+            self.DEFAULT)
+
+    def test_a_failing_claude_profile_falls_through_silently(self):
+        self.write_stub("#!/bin/sh\necho boom >&2\nexit 3\n")
+        self.assertEqual(self.resolve(stub_on_path=True), self.DEFAULT)
+
+    def test_a_claude_profile_that_answers_nothing_falls_through(self):
+        self.write_stub("#!/bin/sh\nexit 0\n")
+        self.assertEqual(self.resolve(stub_on_path=True), self.DEFAULT)
+
+    def test_dotenv_pins_the_list_and_skips_claude_profile(self):
+        self.assertEqual(
+            self.resolve(stub_on_path=True,
+                         dotenv='typeset -a CLAUDE_PROFILE_DIRS=("$HOME/.claude")\n'),
+            [".claude"])
+
+    def test_a_profile_dir_that_does_not_exist_is_dropped(self):
+        self.write_stub("#!/bin/sh\n"
+                        "[ \"$1\" = list ] || exit 1\n"
+                        "printf 'work\\t~/.claude\\tactive\\n'\n"
+                        "printf 'ghost\\t~/.claude-ghost\\t\\n'\n")
+        self.assertEqual(self.resolve(stub_on_path=True), [".claude"])
 
 
 # ── live: drive the real Claude Code binary ─────────────────────────────────

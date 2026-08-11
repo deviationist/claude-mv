@@ -54,10 +54,13 @@ Code history so `claude --resume` still finds the sessions at the new path.
   plus `~/.claude-personal`. The bridge is soft: every failure path falls
   through, and nothing else in the repo knows claude-profile exists.
 - `claude-mv.py` — all the logic; stdlib only, no deps.
-- `tests/test_claude_mv.py` — five layers (unit, e2e, conformance against the
-  real `~/.claude`, live against the `claude` binary, resume UI under tmux).
-  Layers 4–5 opt in with `CLAUDE_MV_LIVE_TEST=1`; they need no auth and spend
-  no tokens.
+- `tests/test_claude_mv.py` — seven layers (unit, e2e, multi-profile, zsh
+  wrapper, conformance against the real `~/.claude`, live against the `claude`
+  binary, resume UI under tmux). The last two opt in with
+  `CLAUDE_MV_LIVE_TEST=1`; they need no auth and spend no tokens. The wrapper
+  layer needs zsh — CI installs it on Linux and runs `zsh --version` *without*
+  a `|| true`, so a runner image that drops zsh fails the build instead of
+  quietly skipping the layer.
 - `tools/generate-readme-svg.zsh` → `assets/*.svg` — the README images. Runs
   the tool unmodified against a throwaway `$HOME` and converts the ANSI to an
   SVG terminal grid, so the text in them is real output. Sibling of the same

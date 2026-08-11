@@ -208,23 +208,31 @@ python3 tests/test_claude_mv.py              # hermetic, ~1s
 CLAUDE_MV_LIVE_TEST=1 python3 tests/test_claude_mv.py   # + live layers, ~20s
 ```
 
-Five layers, each closing a gap the previous one can't see:
+Seven layers, each closing a gap the previous ones can't see:
 
 1. **Unit** — the pure helpers (encoding, canonicalization, config merging).
 2. **End-to-end** — a throwaway profile in a tmpdir, claude-mv run as a real
    subprocess, assertions on the resulting disk state.
-3. **Conformance** — read-only checks that the *real* `~/.claude` still
+3. **Multi-profile** — several profiles in one run, in the two config layouts
+   a real machine mixes (`~/.claude.json` for the default profile, an
+   in-dir `.claude.json` for the rest). Layer 2 passes exactly one
+   `--profile`, so it cannot see a second one being skipped.
+4. **Wrapper** — `claude-mv.zsh` decides *which* profiles the python is told
+   about; layers 2–3 bypass that by passing `--profile` themselves. Covers
+   all of `.env` pin / claude-profile / built-in default, including
+   claude-profile installed as a zsh function, failing, or absent.
+5. **Conformance** — read-only checks that the *real* `~/.claude` still
    matches the format the fixtures imitate. Without this, a Claude Code
    format change would leave every other test green while the tool broke.
-4. **Live** — drives the real `claude` binary and uses it as the oracle for
+6. **Live** — drives the real `claude` binary and uses it as the oracle for
    its own cwd encoding: Claude writes a project dir, claude-mv migrates it,
    Claude runs again at the new path and must land in the same directory
    rather than creating a second one.
-5. **Resume UI** — runs `claude --resume` under tmux at the moved path and
+7. **Resume UI** — runs `claude --resume` under tmux at the moved path and
    reads the picker off the screen, with a plain-`mv` negative control that
    must come up empty.
 
-Layers 4 and 5 are opt-in via `CLAUDE_MV_LIVE_TEST=1`. Neither needs
+Layers 6 and 7 are opt-in via `CLAUDE_MV_LIVE_TEST=1`. Neither needs
 authentication or spends any tokens: Claude Code writes its project files
 before it checks credentials, and the resume picker reads sessions straight
 off disk.
