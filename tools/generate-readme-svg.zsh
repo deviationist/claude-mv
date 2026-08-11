@@ -37,10 +37,10 @@
 # consistent with the paths beside them. Nothing else is touched.
 #
 # Usage:  zsh tools/generate-readme-svg.zsh
-#           → assets/{move,conflict,restore}-<hash>.svg, older ones deleted,
-#             README <img> references rewritten (the random hash busts GitHub's
-#             camo image cache). Commit all three files.
-#         zsh tools/generate-readme-svg.zsh MOVE.svg CONFLICT.svg RESTORE.svg
+#           → assets/{move,profiles,conflict,restore}-<hash>.svg, older ones
+#             deleted, README <img> references rewritten (the random hash busts
+#             GitHub's camo image cache). Commit all four files.
+#         zsh tools/generate-readme-svg.zsh MOVE.svg PROFILES.svg CONFLICT.svg RESTORE.svg
 #           → fixed paths, README untouched.
 #
 # Regenerate whenever the migration report, the conflict prompt or the restore
@@ -114,6 +114,15 @@ seed_profile() {  # seed_profile <profile-dir> <config-json> <cwd>... — the tw
   } > "$cfg"
 }
 
+# The shape almost every run has: one profile, one project, nothing nested.
+# This is the hero image, so it deliberately shows the ordinary thing rather
+# than the capable one.
+seed_simple() {
+  rm -rf "$fakehome"; mkdir -p "$fakehome/code/lipsum/src"
+  seed_project "$fakehome/.claude" "$fakehome/code/lipsum" 3 16
+  seed_profile "$fakehome/.claude" "$fakehome/.claude.json" "$fakehome/code/lipsum"
+}
+
 seed() {  # a folder to move, with a nested project of its own, in two profiles
   rm -rf "$fakehome"
   mkdir -p "$fakehome/code/lipsum/api" "$fakehome/code/lipsum/web"
@@ -168,11 +177,19 @@ answer() {  # answer <blob> <prompt> <typed>
 cmdline() { print -rn -- $'\e[2m%\e[0m '$'\e[1m'"$1"$'\e[0m' }
 
 # ---- capture the real output ----------------------------------------------
-# 1. the headline: a clean move across both profiles, nested project included.
-seed
-move_out=$(demoize "$(${=cm} $profiles "$fakehome/code/lipsum" "$fakehome/code/foo" 2>&1)")
+# 1. the happy path, and the hero: one folder, one profile, the four stores it
+#    keys. Multi-profile and nested projects are capability, not the everyday
+#    case, so they get their own image below rather than the first impression.
+seed_simple
+move_out=$(demoize "$(${=cm} --profile "$fakehome/.claude" \
+                        "$fakehome/code/lipsum" "$fakehome/code/foo" 2>&1)")
 
-# 2. the destination already has history: conflicts are listed, the policy is
+# 2. the same move where there is more to carry: a second profile, and a
+#    nested project of the moved folder's own with separate sessions.
+seed
+profiles_out=$(demoize "$(${=cm} $profiles "$fakehome/code/lipsum" "$fakehome/code/foo" 2>&1)")
+
+# 3. the destination already has history: conflicts are listed, the policy is
 #    asked for, and `c` (consolidate) is answered. Both profiles again, so the
 #    drawn command line means the same machine as the image above it.
 seed; seed_destination_history
@@ -180,7 +197,7 @@ conflict_out=$(CLAUDE_MV_FORCE_PROMPT=1 ${=cm} $profiles \
                  "$fakehome/code/lipsum" "$fakehome/code/foo" 2>&1 <<< 'c')
 conflict_out=$(demoize "$(answer "$conflict_out" 'choice [a]: ' c)")
 
-# 3. rolling one back, end to end. The move that produces the restore point is
+# 4. rolling one back, end to end. The move that produces the restore point is
 #    shown rather than hidden: `overwrite` is the one mode that KEEPS its
 #    restore point on success (it is the archive of the history it discarded),
 #    which is both why the listing below reads [overwrite] and the only way
@@ -193,8 +210,8 @@ restore_list=$(demoize "$(${=cm} --restore 2>&1)")
 restore_run=$(CLAUDE_MV_FORCE_PROMPT=1 ${=cm} --restore latest 2>&1 <<< 'y')
 restore_run=$(demoize "$(answer "$restore_run" 'restore? [y/N]: ' y)")
 
-[[ -n $move_out && -n $conflict_out && -n $restore_move && -n $restore_list \
-   && -n $restore_run ]] || {
+[[ -n $move_out && -n $profiles_out && -n $conflict_out && -n $restore_move \
+   && -n $restore_list && -n $restore_run ]] || {
   print -u2 "generate-readme-svg: sandbox produced no output — aborting"; exit 1 }
 [[ $move_out == *"done"* ]] || {
   print -u2 "generate-readme-svg: the move did not succeed — aborting"; exit 1 }
@@ -352,8 +369,9 @@ emit_svg() {
 }
 
 # ---- compose ---------------------------------------------------------------
-typeset -a move_lines conflict_lines restore_lines
+typeset -a move_lines profiles_lines conflict_lines restore_lines
 move_lines=("$(cmdline 'claude-mv ~/code/lipsum ~/code/foo')" '' "${(@f)move_out}")
+profiles_lines=("$(cmdline 'claude-mv ~/code/lipsum ~/code/foo')" '' "${(@f)profiles_out}")
 conflict_lines=("$(cmdline 'claude-mv ~/code/lipsum ~/code/foo')" '' "${(@f)conflict_out}")
 restore_lines=("$(cmdline 'claude-mv --on-conflict overwrite ~/code/lipsum ~/code/foo')" ''
                "${(@f)restore_move}" ''
@@ -361,27 +379,35 @@ restore_lines=("$(cmdline 'claude-mv --on-conflict overwrite ~/code/lipsum ~/cod
                "$(cmdline 'claude-mv --restore latest')" '' "${(@f)restore_run}")
 
 # ---- write -----------------------------------------------------------------
-MOVE_ARIA='claude-mv moving a folder: a restore point is taken, the folder is moved, then each Claude profile is re-keyed in turn — project dirs renamed, session files rewritten, config keys and history entries updated — closing with a green done line and a tally'
+MOVE_ARIA='claude-mv moving a folder: a restore point is taken, the folder is moved, and its Claude profile is re-keyed — the project dir renamed, session files rewritten, the config key and history entries updated — closing with a green done line and a tally'
+PROFILES_ARIA='the same move on a machine with two Claude profiles and a nested project under the moved folder: both profiles are re-keyed in turn, each reporting its own project dirs, session files, config keys and history entries'
 CONFLICT_ARIA='claude-mv finding history already at the destination: the conflicting project dir and config key are listed, four resolution policies are offered, consolidate is chosen, and the merge is reported per store across both profiles'
 RESTORE_ARIA='an overwrite move keeping its restore point as the archive of the history it discarded, that point then listed by claude-mv --restore, and finally rolled back: the folder move-back and the number of dirs and files to restore are previewed, confirmed, and reported done'
 
 if [[ -n ${1:-} ]]; then
   emit_svg move_lines     "$1" 'claude-mv' "$MOVE_ARIA";     print "wrote $1"
-  [[ -n ${2:-} ]] && { emit_svg conflict_lines "$2" 'claude-mv' "$CONFLICT_ARIA"; print "wrote $2" }
-  [[ -n ${3:-} ]] && { emit_svg restore_lines  "$3" 'claude-mv' "$RESTORE_ARIA";  print "wrote $3" }
+  [[ -n ${2:-} ]] && { emit_svg profiles_lines "$2" 'claude-mv' "$PROFILES_ARIA"; print "wrote $2" }
+  [[ -n ${3:-} ]] && { emit_svg conflict_lines "$3" 'claude-mv' "$CONFLICT_ARIA"; print "wrote $3" }
+  [[ -n ${4:-} ]] && { emit_svg restore_lines  "$4" 'claude-mv' "$RESTORE_ARIA";  print "wrote $4" }
 else
   mkdir -p "$root/assets"
   local old
-  for old in "$root"/assets/move-*.svg(N) "$root"/assets/conflict-*.svg(N) \
-             "$root"/assets/restore-*.svg(N); do rm -f "$old"; done
+  for old in "$root"/assets/move-*.svg(N) "$root"/assets/profiles-*.svg(N) \
+             "$root"/assets/conflict-*.svg(N) "$root"/assets/restore-*.svg(N); do
+    rm -f "$old"
+  done
   local hash; hash=$(xxd -l3 -p /dev/urandom)
   emit_svg move_lines     "$root/assets/move-${hash}.svg"     'claude-mv' "$MOVE_ARIA"
+  emit_svg profiles_lines "$root/assets/profiles-${hash}.svg" 'claude-mv' "$PROFILES_ARIA"
   emit_svg conflict_lines "$root/assets/conflict-${hash}.svg" 'claude-mv' "$CONFLICT_ARIA"
   emit_svg restore_lines  "$root/assets/restore-${hash}.svg"  'claude-mv' "$RESTORE_ARIA"
+  # `profiles` before `move`: the move pattern would otherwise also match the
+  # tail of a profiles-*.svg reference and rewrite it to the wrong name.
   sed -i.bak \
+    -e "s|assets/profiles-[^)\"]*\.svg|assets/profiles-${hash}.svg|" \
     -e "s|assets/move-[^)\"]*\.svg|assets/move-${hash}.svg|" \
     -e "s|assets/conflict-[^)\"]*\.svg|assets/conflict-${hash}.svg|" \
     -e "s|assets/restore-[^)\"]*\.svg|assets/restore-${hash}.svg|" \
     "$root/README.md" && rm -f "$root/README.md.bak"
-  print "wrote assets/{move,conflict,restore}-${hash}.svg and updated README.md"
+  print "wrote assets/{move,profiles,conflict,restore}-${hash}.svg and updated README.md"
 fi

@@ -548,17 +548,25 @@ def new_tally() -> dict:
 def summarize(t: dict) -> str:
     """The tally as a single phrase, dropping whatever is zero. Empty string
     when nothing at all was touched — callers then print no tally rather than
-    a row of zeroes."""
+    a row of zeroes.
+
+    Pluralised properly rather than with the terse "(s)" the report rows use.
+    Those rows are a repeated column of counts; this is one sentence a reader
+    actually reads, and a single-project move — much the commonest case —
+    would otherwise open with "1 project dir(s)".
+    """
+    def n(count: int, one: str, many: str) -> str:
+        return f"{count} {one if count == 1 else many}"
+
     bits = []
     if t["dirs"]:
-        bits.append(f"{t['dirs']} project dir(s)")
+        bits.append(n(t["dirs"], "project dir", "project dirs"))
     if t["sessions"]:
-        bits.append(f"{t['sessions']} session file(s)")
+        bits.append(n(t["sessions"], "session file", "session files"))
     if t["keys"]:
-        bits.append(f"{t['keys']} config key(s)")
+        bits.append(n(t["keys"], "config key", "config keys"))
     if t["history"]:
-        bits.append(f"{t['history']} history "
-                    f"{'entry' if t['history'] == 1 else 'entries'}")
+        bits.append(n(t["history"], "history entry", "history entries"))
     return " · ".join(bits)
 
 
