@@ -7,7 +7,9 @@
 Seven layers, each closing a gap the ones before it can't see:
 
   * unit tests on the pure helpers (path encoding, canonicalization, config
-    merging), loaded straight out of claude-mv.py;
+    merging, and the reporting layer — when colour is on, what the tally
+    says, which policy an answer at the conflict prompt selects), loaded
+    straight out of claude-mv.py;
   * end-to-end tests that build a throwaway Claude profile (projects/ dirs,
     session jsonl, .claude.json, history.jsonl) plus a project folder in a
     tmpdir, run claude-mv as a subprocess against it, and assert on the
@@ -37,10 +39,13 @@ with CLAUDE_MV_RESTORE_ROOT redirected, so no test can write to the real
 point Claude at a throwaway CLAUDE_CONFIG_DIR.
 """
 
+import ast
 import glob
 import importlib.util
+import io
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -48,6 +53,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCRIPT = os.path.join(os.path.dirname(HERE), "claude-mv.py")
@@ -130,6 +136,192 @@ class TestHelpers(unittest.TestCase):
         self.assertEqual(cm.config_json_path(home_claude),
                          os.path.expanduser("~/.claude.json"))
         self.assertEqual(cm.config_json_path("/tmp/prof"), "/tmp/prof/.claude.json")
+
+
+# ── the reporting layer: colour, the tally, the conflict prompt ─────────────
+
+def _plain(text):
+    """Strip SGR sequences. Everything below asserts on what colour *does* —
+    never on which codes it picks. Whether cyan is 36 is a fact about ECMA-48,
+    not about claude-mv, and pinning it would only make the suite brittle."""
+    return re.sub(r"\x1b\[[0-9;]*m", "", text)
+
+
+class _Stream:
+    """Minimal stand-in for stdout/stderr: color_enabled() only ever asks
+    whether it is a tty, which is not a thing a test should have to own."""
+
+    def __init__(self, tty):
+        self._tty = tty
+
+    def isatty(self):
+        return self._tty
+
+
+class TestReporting(unittest.TestCase):
+    """The output IS the product here — there is no porcelain, every line is
+    read by a person — so the decisions behind it are worth testing. The
+    decisions, though, not the rendering."""
+
+    def setUp(self):
+        # color_enabled() and can_prompt() read os.environ directly.
+        self._saved = {k: os.environ.get(k) for k in
+                       ("CLAUDE_MV_COLOR", "NO_COLOR", "CLAUDE_MV_FORCE_PROMPT")}
+        for k in self._saved:
+            os.environ.pop(k, None)
+        self.addCleanup(self._restore)
+
+    def _restore(self):
+        for k, v in self._saved.items():
+            os.environ.pop(k, None)
+            if v is not None:
+                os.environ[k] = v
+
+    # -- is colour on? ------------------------------------------------------
+
+    def test_colour_follows_the_stream_by_default(self):
+        self.assertTrue(cm.color_enabled(_Stream(True)))
+        self.assertFalse(cm.color_enabled(_Stream(False)))
+
+    def test_no_color_wins_over_a_tty(self):
+        os.environ["NO_COLOR"] = "1"
+        self.assertFalse(cm.color_enabled(_Stream(True)))
+
+    def test_an_explicit_mode_wins_over_everything(self):
+        os.environ["CLAUDE_MV_COLOR"] = "always"
+        self.assertTrue(cm.color_enabled(_Stream(False)))
+        os.environ["NO_COLOR"] = "1"
+        self.assertTrue(cm.color_enabled(_Stream(False)),
+                        "an explicit `always` should beat NO_COLOR")
+        os.environ.pop("NO_COLOR")
+        os.environ["CLAUDE_MV_COLOR"] = "never"
+        self.assertFalse(cm.color_enabled(_Stream(True)))
+
+    def test_an_unrecognised_mode_falls_back_to_the_stream(self):
+        os.environ["CLAUDE_MV_COLOR"] = "yes-please"
+        self.assertTrue(cm.color_enabled(_Stream(True)))
+        self.assertFalse(cm.color_enabled(_Stream(False)))
+
+    # -- what colour is allowed to change: nothing ---------------------------
+
+    def test_colour_is_a_pure_overlay(self):
+        """The invariant the design rests on. Every other test in this file
+        captures a pipe, so it reads the uncoloured text — those assertions
+        are only valid for a terminal if colour adds escapes and nothing
+        else."""
+        os.environ["CLAUDE_MV_COLOR"] = "always"
+        for text in ("moving", "/a/b \u2192 /c/d", "1 project dir",
+                     "projects/-Users-you-code-foo", "\u26a0\ufe0f  careful"):
+            self.assertEqual(_plain(cm.c(text, "bold", "cyan")), text)
+
+    def test_disabled_colour_returns_the_string_untouched(self):
+        os.environ["CLAUDE_MV_COLOR"] = "never"
+        self.assertEqual(cm.c("moving", "bold", "cyan"), "moving")
+
+    def test_every_style_name_is_one_the_tool_knows(self):
+        """c() indexes _SGR directly, so a mistyped style name is a KeyError
+        raised on a terminal in the middle of a migration — the one place an
+        exception is most expensive."""
+        os.environ["CLAUDE_MV_COLOR"] = "always"
+        for style in cm._SGR:
+            self.assertEqual(_plain(cm.c("x", style)), "x", style)
+
+    def test_every_style_a_caller_asks_for_is_defined(self):
+        """The complement, and the one with teeth: an unused entry in _SGR is
+        harmless, but a CALL SITE naming a style that isn't there is a
+        KeyError, raised on a terminal mid-migration — on the very code path
+        the piped suite never colours. So read the call sites rather than
+        trust them."""
+        tree = ast.parse(io.open(SCRIPT, encoding="utf-8").read())
+        used = set()
+        for node in ast.walk(tree):
+            if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                    and node.func.id == "c"):
+                for arg in node.args[1:]:          # arg 0 is the text
+                    if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                        used.add(arg.value)
+        self.assertGreater(len(used), 3, "found almost no c() call sites — "
+                                         "has the helper been renamed?")
+        self.assertEqual(sorted(used - set(cm._SGR)), [])
+
+    def test_the_message_prefixes_keep_their_plain_form(self):
+        for mode in ("always", "never"):
+            os.environ["CLAUDE_MV_COLOR"] = mode
+            self.assertEqual(_plain(cm.emsg("boom")), "claude-mv: boom", mode)
+            # the warning sign is drawn double-width, hence the two spaces
+            self.assertEqual(_plain(cm.wmsg("careful")), "\u26a0\ufe0f  careful", mode)
+
+    # -- the tally -----------------------------------------------------------
+
+    def test_the_tally_reports_every_store(self):
+        self.assertEqual(
+            cm.summarize({"dirs": 3, "sessions": 4, "keys": 3, "history": 12}),
+            "3 project dirs \u00b7 4 session files \u00b7 3 config keys "
+            "\u00b7 12 history entries")
+
+    def test_the_tally_is_singular_for_the_commonest_run(self):
+        """One folder, one profile, nothing nested — the hero case, and the
+        one that would read `1 project dir(s)` if nobody looked."""
+        self.assertEqual(
+            cm.summarize({"dirs": 1, "sessions": 1, "keys": 1, "history": 1}),
+            "1 project dir \u00b7 1 session file \u00b7 1 config key "
+            "\u00b7 1 history entry")
+
+    def test_the_tally_drops_whatever_is_zero(self):
+        self.assertEqual(
+            cm.summarize({"dirs": 2, "sessions": 0, "keys": 1, "history": 0}),
+            "2 project dirs \u00b7 1 config key")
+
+    def test_an_empty_tally_says_nothing_rather_than_zeroes(self):
+        self.assertEqual(cm.summarize(cm.new_tally()), "")
+
+    # -- the conflict prompt -------------------------------------------------
+
+    def _ask(self, answers, already_moved=False):
+        """Drive ask_conflict_mode with canned answers. stdout is swallowed:
+        the menu is rendering, and rendering is not what is under test."""
+        os.environ["CLAUDE_MV_FORCE_PROMPT"] = "1"
+        if answers is EOFError:
+            def fake(_prompt=""):
+                raise EOFError
+        else:
+            pending = iter(answers)
+
+            def fake(_prompt=""):
+                return next(pending)
+        with mock.patch("builtins.input", fake), \
+                mock.patch("sys.stdout", new=io.StringIO()):
+            return cm.ask_conflict_mode(already_moved)
+
+    def test_each_answer_selects_its_policy(self):
+        for key, mode in (("o", "overwrite"), ("c", "consolidate"),
+                          ("r", "rename-only"), ("a", "abort")):
+            self.assertEqual(self._ask([key]), mode, key)
+
+    def test_the_default_is_the_one_that_changes_nothing(self):
+        self.assertEqual(self._ask([""]), "abort")
+
+    def test_answers_are_case_and_whitespace_insensitive(self):
+        self.assertEqual(self._ask(["  C  "]), "consolidate")
+
+    def test_it_reprompts_rather_than_guessing(self):
+        self.assertEqual(self._ask(["x", "consolidate", "o"]), "overwrite")
+
+    def test_rename_only_is_withheld_after_already_moved(self):
+        """With the folder already moved there is no mv left to do on its
+        own, so `r` is just abort. It must not be quietly accepted as a
+        distinct policy — the run would report a rename that never happened."""
+        self.assertEqual(self._ask(["r", "c"], already_moved=True),
+                         "consolidate")
+
+    def test_end_of_input_aborts(self):
+        self.assertEqual(self._ask(EOFError), "abort")
+
+    def test_it_declines_to_ask_when_nobody_is_there(self):
+        """can_prompt() is the gate main() uses to exit 2 instead of hanging
+        on a closed stdin in a script or a CI job."""
+        with mock.patch.object(cm, "can_prompt", lambda: False):
+            self.assertIsNone(cm.ask_conflict_mode())
 
 
 # ── conformance: does the real profile still match our fixtures? ────────────

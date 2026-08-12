@@ -210,7 +210,10 @@ CLAUDE_MV_LIVE_TEST=1 python3 tests/test_claude_mv.py   # + live layers, ~20s
 
 Seven layers, each closing a gap the previous ones can't see:
 
-1. **Unit** — the pure helpers (encoding, canonicalization, config merging).
+1. **Unit** — the pure helpers (encoding, canonicalization, config merging)
+   and the reporting layer: when colour is on, that it changes nothing but
+   the escapes, what the tally says, and which policy an answer at the
+   conflict prompt selects. On the decisions, never on the escape codes.
 2. **End-to-end** — a throwaway profile in a tmpdir, claude-mv run as a real
    subprocess, assertions on the resulting disk state.
 3. **Multi-profile** — several profiles in one run, in the two config layouts

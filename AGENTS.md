@@ -76,8 +76,10 @@ Code history so `claude --resume` still finds the sessions at the new path.
   not the test.
 - When changing path handling, add the case to `TestPathForms`: every spelling
   of one folder must migrate identically.
-- New output goes through `c()` / `emsg()` / `wmsg()`, never a raw escape, and
-  keeps the palette's meaning: cyan = the path/name/key being acted on, bold =
+- New output goes through `c()` / `emsg()` / `wmsg()`, never a raw escape. A
+  test parses the call sites and fails on a style name `_SGR` doesn't define —
+  `c()` indexes it directly, so a typo is a `KeyError` on a terminal that the
+  piped suite would never reach. Keep the palette's meaning: cyan = the path/name/key being acted on, bold =
   the identifier or count worth reading, dim = asides, green = did/safe,
   yellow = would/warning, red = error/destructive. Pad and align *before*
   colouring — an escape counts toward `len()` but not toward what is drawn.
