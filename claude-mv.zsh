@@ -9,6 +9,7 @@
 # configured profile dir.
 #
 # Usage:  claude-mv [-n|--dry-run] [--force] [--already-moved] <src-dir> <dst>
+#         claude-mv --extract [--session <id>] <src-dir> <dst>
 #
 #   -n / --dry-run   show the full migration plan without touching anything
 #   --force          proceed even if a live Claude session runs inside src
@@ -17,6 +18,13 @@
 #                    editor, Claude itself) and its history is stranded on the
 #                    old path: move nothing, just re-key the history onto the
 #                    new path. src must be gone, dst must already exist.
+#   --extract        pull individual SESSIONS out of src's history and re-key
+#                    them onto dst, rather than moving a folder: for the
+#                    project that was born mid-session in a parent directory
+#                    (told Claude to mkdir and cd), leaving its history keyed
+#                    on the parent. Pick from the sessions homed in src, and
+#                    only those move — src keeps the rest. src defaults to the
+#                    cwd; dst is asked for when not given, never guessed.
 #
 # Env (.env beside this script, gitignored — see .env.example):
 #   CLAUDE_PROFILE_DIRS          profile dirs to migrate. Unset, claude-mv
@@ -26,6 +34,15 @@
 #   CLAUDE_PROFILE_SCRIPT        (env, not .env) where claude-profile.py lives,
 #                                when it is neither on PATH nor a sibling
 #                                clone. Same override claude-usage honours.
+#   CLAUDE_MV_CCFIND_SCRIPT      (env, not .env — like CLAUDE_PROFILE_SCRIPT,
+#                                and authoritative the same way) where
+#                                ccfind.zsh lives, when it is neither a loaded
+#                                function nor a sibling clone. --extract uses
+#                                ccfind to search transcripts; without it the
+#                                sessions are listed straight off disk.
+#   CLAUDE_MV_SOURCE             (env) ccfind|fs|auto — force the session
+#                                source rather than detecting it
+#   CLAUDE_MV_PICKER             (env) fzf|plain|auto — force the session picker
 #   CLAUDE_MV_OVERWRITE_BACKUP   keep the restore point after a successful
 #                                overwrite (default 1; 0 opts out)
 #   CLAUDE_MV_RESTORE_ROOT       restore-point dir (default ~/.claude-mv/restore)
@@ -90,6 +107,35 @@ _claude_mv_profile_dirs() {
   print -rl -- "${(@)${(@)${(@)rows#*$'\t'}%%$'\t'*}/#\~/$HOME}"
 }
 
+# ----------------------------------------------------------------------------
+# Internal: where ccfind lives, as a path the python can source. Prints nothing
+# and returns 1 when ccfind isn't installed.
+#
+# --extract uses ccfind to search transcript bodies (see the python's
+# find_sessions). The awkward part is that ccfind is a zsh FUNCTION in an
+# interactive shell, so there is usually nothing on PATH to exec and the python
+# cannot call it at all — but zsh records where a function was defined in
+# $functions_source, which hands us the script to source. Same candidate order
+# and same soft contract as the claude-profile bridge above: an explicit
+# override is authoritative, every other failure falls through, and with no
+# ccfind at all the python walks the filesystem instead.
+# ----------------------------------------------------------------------------
+_claude_mv_ccfind_source() {
+  if [[ -n ${CLAUDE_MV_CCFIND_SCRIPT:-} ]]; then
+    [[ -f $CLAUDE_MV_CCFIND_SCRIPT ]] || return 1
+    print -r -- "$CLAUDE_MV_CCFIND_SCRIPT"
+    return 0
+  fi
+  # A function we can see: ask zsh which file defined it.
+  if (( ${+functions[ccfind]} )) && [[ -f ${functions_source[ccfind]:-} ]]; then
+    print -r -- "${functions_source[ccfind]}"
+    return 0
+  fi
+  local sibling="$CLAUDE_MV_SELF_DIR/../ccfind/ccfind.zsh"
+  [[ -f $sibling ]] || return 1
+  print -r -- "${sibling:A}"
+}
+
 claude-mv() {
   emulate -L zsh
   local _dir="$CLAUDE_MV_SELF_DIR"
@@ -124,5 +170,11 @@ claude-mv() {
   local -a envp
   [[ -n "$CLAUDE_MV_OVERWRITE_BACKUP" ]] && envp+=("CLAUDE_MV_OVERWRITE_BACKUP=$CLAUDE_MV_OVERWRITE_BACKUP")
   [[ -n "$CLAUDE_MV_RESTORE_ROOT" ]] && envp+=("CLAUDE_MV_RESTORE_ROOT=$CLAUDE_MV_RESTORE_ROOT")
+  # Resolved here, not in the python: only this shell can see whether ccfind
+  # is a function, and only zsh knows where that function came from.
+  local _ccfind
+  if _ccfind=$(_claude_mv_ccfind_source); then
+    envp+=("CLAUDE_MV_CCFIND_SOURCE=$_ccfind")
+  fi
   env "${envp[@]}" python3 "${_dir}/claude-mv.py" "${prof[@]}" "$@"
 }

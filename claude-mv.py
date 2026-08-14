@@ -53,6 +53,18 @@ or supplied via --on-conflict:
   rename-only  do the plain mv, leave all Claude history untouched
   abort        do nothing at all
 
+--extract moves individual SESSIONS instead of a folder, for the project
+that was born mid-session in a parent directory: you were in ~/code, told
+Claude to make a folder and cd into it, and the whole conversation stayed
+keyed on ~/code. Moving all of ~/code's history would be wrong — the other
+sessions belong there — so this mode picks out the ones that don't. The
+candidates are the sessions HOMED in src (whichever cwd they later wandered
+to), listed via ccfind when it is installed and off the filesystem otherwise;
+a picker chooses among them, or --session <id> names them outright. Only
+their transcripts, sidecars and history entries move; src keeps everything
+else, and no folder is touched. See the section above run_session_mode() for
+what that does and does not rewrite.
+
 Restore points: before any history migration, every path about to be
 touched (affected project dirs, conflicting destination dirs, config JSON,
 history.jsonl) is copied into $CLAUDE_MV_RESTORE_ROOT (default
@@ -69,6 +81,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 import time
 
@@ -177,6 +190,27 @@ def atomic_write(path: str, data: str) -> None:
     os.replace(tmp, path)
 
 
+def jsonl_first_cwd_of_file(path: str) -> str | None:
+    """The first top-level "cwd" in one session file — its *starting* cwd.
+
+    ccfind derives its `cwd` column the same way (first match in the file), so
+    the two session sources agree on which sessions belong to a project dir.
+    """
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                try:
+                    obj = json.loads(line)
+                except ValueError:
+                    continue
+                cwd = obj.get("cwd")
+                if isinstance(cwd, str):
+                    return cwd
+    except OSError:
+        return None
+    return None
+
+
 def jsonl_first_cwd(project_dir: str) -> str | None:
     """Best-effort: find a top-level "cwd" value in any session jsonl."""
     try:
@@ -184,18 +218,9 @@ def jsonl_first_cwd(project_dir: str) -> str | None:
     except OSError:
         return None
     for name in names:
-        try:
-            with open(os.path.join(project_dir, name), encoding="utf-8") as f:
-                for line in f:
-                    try:
-                        obj = json.loads(line)
-                    except ValueError:
-                        continue
-                    cwd = obj.get("cwd")
-                    if isinstance(cwd, str):
-                        return cwd
-        except OSError:
-            continue
+        cwd = jsonl_first_cwd_of_file(os.path.join(project_dir, name))
+        if cwd is not None:
+            return cwd
     return None
 
 
@@ -219,6 +244,226 @@ def find_project_dirs(projects_root: str, old: str) -> list[tuple[str, str]]:
             if cwd and under(cwd, old):
                 hits.append((d, cwd))
     return hits
+
+
+# ── session discovery ───────────────────────────────────────────────────────
+# --extract moves individual sessions rather than a whole folder, so it needs
+# a candidate list: the sessions homed in src's project dir. Two interchangeable
+# sources produce it, and they must agree — a soft dependency that quietly
+# returns a different set depending on what is installed is worse than no
+# dependency at all, so the suite pins them against each other.
+#
+#   ccfind      `ccfind --json -l -x -d <src>` — adds full-text search over the
+#               transcript bodies and its own multi-profile resolution.
+#   filesystem  a walk of <profile>/projects/<enc(src)>/*.jsonl. No search, but
+#               it sweeps every profile claude-mv was given, so it is a faithful
+#               substitute rather than a degraded one.
+#
+# $CLAUDE_MV_SOURCE=ccfind|fs|auto forces one (auto = ccfind when the wrapper
+# found it). Tests need that: CI has no ccfind, so auto-detection alone would
+# exercise one path twice and the other never.
+
+# Openings that mean the machine was talking, not the person. str.startswith
+# takes a tuple, so this is one comparison per candidate turn.
+MACHINE_PREFIXES = ("<", "Caveat:", "[Request interrupted",
+                    "Base directory for this skill:")
+
+
+def session_snippet(path: str, limit: int = 120) -> str:
+    """First human turn in a transcript, as the label a picker shows.
+
+    Best-effort by design: an unreadable or contentless session still deserves
+    a row in the picker — it is the id that gets acted on, not the snippet.
+    """
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                try:
+                    obj = json.loads(line)
+                except ValueError:
+                    continue
+                if obj.get("type") != "user":
+                    continue
+                content = (obj.get("message") or {}).get("content")
+                if isinstance(content, list):
+                    # A turn's content is usually a list of typed blocks, and
+                    # tool RESULTS come back as user turns too — on this
+                    # machine 14049 of 14132 blocks in user turns are
+                    # tool_result, against 81 text. Take the text blocks and
+                    # nothing else, so a turn that was only the machine
+                    # reporting back contributes nothing and we keep looking.
+                    content = " ".join(b.get("text", "") for b in content
+                                       if isinstance(b, dict)
+                                       and b.get("type") == "text")
+                if not (isinstance(content, str) and content.strip()):
+                    continue
+                text = " ".join(content.split())
+                # Not every "user" turn was typed by one: Claude injects
+                # caveats, slash-command expansions, skill preambles and
+                # interruption markers as user messages, and a picker row
+                # labelled "<local-command-caveat>" identifies nothing.
+                #
+                # Matched by exact prefix rather than anything looser — the
+                # markers are bracketed, but so is a real prompt that opens
+                # with a pasted image ("[Image #4] So these are the fields…"),
+                # and dropping those would lose the very rows this list exists
+                # to show.
+                if text.startswith(MACHINE_PREFIXES):
+                    continue
+                return text[:limit - 1] + "…" if len(text) > limit else text
+    except OSError:
+        pass
+    return "(no prompt recorded)"
+
+
+def session_rows(profile: str, src: str) -> list[dict]:
+    """Sessions homed in <profile>/projects/<enc(src)>/ — the filesystem source.
+
+    "Homed in" is the right predicate, not "recorded cwd equals src": a session
+    that started in src and cd'd elsewhere — precisely the case this feature
+    exists for — keeps its file in src's project dir for its whole life. Its
+    LATER cwd lines are somewhere else entirely, so anything matching on those
+    would miss the one session the user is looking for.
+    """
+    d = os.path.join(profile, "projects", enc(src))
+    if not os.path.isdir(d):
+        return []
+    rows = []
+    for name in sorted(os.listdir(d)):
+        if not name.endswith(".jsonl"):
+            continue
+        path = os.path.join(d, name)
+        # enc() is lossy, so this dir can legitimately hold sessions of a
+        # different real path (/a/b/c and /a/b-c encode alike, and Claude files
+        # both here). Confirm against what the session recorded before offering
+        # to move it — the same confirmation find_project_dirs() makes.
+        cwd = jsonl_first_cwd_of_file(path)
+        if cwd is not None and cwd != src:
+            continue
+        try:
+            mtime = os.path.getmtime(path)
+        except OSError:
+            mtime = 0.0
+        rows.append({"id": name[:-len(".jsonl")], "profile": profile,
+                     "path": path, "mtime": mtime,
+                     "snippet": session_snippet(path)})
+    return rows
+
+
+def ccfind_command(args: list[str]) -> list[str] | None:
+    """How to invoke ccfind, as resolved by the zsh wrapper.
+
+    ccfind is a zsh *function* in an interactive shell, so there is often no
+    file on PATH to exec — the wrapper resolves it (via $functions_source) to
+    the script that defines it and passes that down, which we source in a
+    throwaway zsh. CLAUDE_MV_CCFIND_BIN is the simpler case: a real executable.
+    """
+    src = os.environ.get("CLAUDE_MV_CCFIND_SOURCE")
+    if src and os.path.isfile(src):
+        # -f: skip the user's rc. Sourcing the script still auto-loads the .env
+        # beside it, which is where that machine's ccfind profiles live.
+        return ["zsh", "-fc", 'source "$1"; shift; ccfind "$@"', "_", src, *args]
+    binary = os.environ.get("CLAUDE_MV_CCFIND_BIN")
+    if binary:
+        return [binary, *args]
+    return None
+
+
+def ccfind_rows(src: str, profiles: list[str], limit: int) -> list[dict] | None:
+    """Sessions homed in `src`, via ccfind. None = unusable, use the walk.
+
+    Falling through rather than raising is the whole contract of a soft
+    dependency: ccfind absent, too old, broken, or answering about a scope we
+    did not ask for must all land on the filesystem source, never on an error
+    and never on a silently different answer.
+    """
+    cmd = ccfind_command(["--json", "-l", "-x", "-d", src, "-n", str(limit)])
+    if not cmd:
+        return None
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if r.returncode != 0:
+        return None
+    try:
+        doc = json.loads(r.stdout)
+    except ValueError:
+        return None
+
+    # The compatibility handshake. A ccfind predating -x rejects the flag, but
+    # one that accepted it and ignored it would answer about the whole SUBTREE
+    # — for ~/code that is every sub-repo's sessions, offered up as if they
+    # lived here. `scope_exact` is how the answer says which question it heard;
+    # anything but a definite yes means we cannot use it.
+    if doc.get("scope_exact") is not True:
+        return None
+
+    known = {os.path.realpath(p): p for p in profiles}
+    rows = []
+    for hit in doc.get("results") or []:
+        cfg = hit.get("config_dir")
+        path = hit.get("path")
+        sid = hit.get("id")
+        if not (isinstance(cfg, str) and isinstance(path, str)
+                and isinstance(sid, str)):
+            continue
+        profile = known.get(os.path.realpath(cfg))
+        if profile is None:
+            # ccfind resolves profiles independently of us (CCFIND_PROFILES,
+            # its own claude-profile bridge), so it can see config dirs this
+            # run was never given. Migrating into one would write to a profile
+            # the user did not ask claude-mv to touch.
+            continue
+        # Confirm the hit really belongs to src — see session_rows() on why
+        # the project dir alone cannot say. ccfind reports "?" when it could
+        # not extract a cwd; that is "don't know", not "not ours", so read the
+        # file ourselves rather than dropping a session on its silence.
+        cwd = hit.get("cwd")
+        if cwd in (None, "?"):
+            cwd = jsonl_first_cwd_of_file(path)
+        if cwd is not None and cwd != src:
+            continue
+        try:
+            mtime = os.path.getmtime(path)
+        except OSError:
+            continue          # ccfind saw it, we cannot — do not offer it
+        rows.append({"id": sid, "profile": profile, "path": path,
+                     "mtime": mtime,
+                     "snippet": hit.get("snippet") or session_snippet(path)})
+    if doc.get("truncated"):
+        print(wmsg(f"ccfind returned {c(str(doc.get('shown')), 'bold')} of "
+                   f"{c(str(doc.get('total')), 'bold')} sessions — raise "
+                   f"{c('--limit', 'cyan')} to see the rest"),
+              file=sys.stderr)
+    return rows
+
+
+def find_sessions(src: str, profiles: list[str],
+                  limit: int) -> list[dict] | None:
+    """The candidate list, newest first, from whichever source is available.
+
+    None means the source could not answer at all — distinct from an empty
+    list, which means it answered "nothing here". The caller reports them
+    differently: one is a broken setup, the other is a mistyped path.
+    """
+    mode = (os.environ.get("CLAUDE_MV_SOURCE") or "auto").strip().lower()
+    cap = limit if limit else 10_000      # 0 = uncapped (see run_session_mode)
+    rows = None
+    if mode in ("auto", "ccfind"):
+        rows = ccfind_rows(src, profiles, cap)
+        if rows is None and mode == "ccfind":
+            print(emsg("CLAUDE_MV_SOURCE=ccfind, but ccfind could not answer "
+                       "(not installed, too old for --json/-x, or failed) — "
+                       "unset it to walk the filesystem instead"),
+                  file=sys.stderr)
+            return None
+    if rows is None:
+        rows = [row for p in profiles for row in session_rows(p, src)]
+    # Newest first, id as the tie-break so the order — and so every test that
+    # picks "the second row" — is stable rather than filesystem-dependent.
+    rows.sort(key=lambda r: (-r["mtime"], r["id"]))
+    return rows[:cap]
 
 
 def rewrite_jsonl_field(path: str, field: str, old: str, new: str,
@@ -383,6 +628,288 @@ def ask_conflict_mode(already_moved: bool = False) -> str | None:
                 f"{'o, c or a' if already_moved else 'o, c, r or a'}", "yellow"))
 
 
+# ── the session picker ──────────────────────────────────────────────────────
+# A resolver, nothing more: it turns the candidate list into the same list of
+# ids `--session` takes, and everything downstream is identical either way.
+# That is what keeps the mode scriptable, and what lets the tests drive the
+# engine without going near a picker at all.
+#
+# fzf is soft, like it is in ccfind. The numbered fallback is not a consolation
+# prize — it is the path the suite exercises, since a pipe can drive it and CI
+# has no fzf.
+
+def session_label(row: dict, width: int = 0) -> str:
+    """One picker row: when it ran, its id, and how it opened."""
+    when = time.strftime("%Y-%m-%d %H:%M", time.localtime(row["mtime"]))
+    sid = row["id"][:8]
+    return f"{when}  {sid}  {row['snippet']}".ljust(width)
+
+
+def pick_with_fzf(rows: list[dict]) -> list[dict] | None:
+    """Multi-select through fzf. None when fzf can't be used at all."""
+    fzf = shutil.which("fzf")
+    if not fzf:
+        return None
+    # Index-prefixed so the selection maps back to a row exactly, rather than
+    # by matching the label text back — snippets can repeat, ids cannot.
+    menu = "\n".join(f"{i}\t{session_label(r)}" for i, r in enumerate(rows))
+    try:
+        r = subprocess.run(
+            [fzf, "--multi", "--with-nth=2..", "--delimiter=\t",
+             "--prompt=session(s) to move > ",
+             "--header=Tab marks · Enter confirms · Esc cancels"],
+            input=menu, capture_output=True, text=True)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if r.returncode != 0:          # 1 = no match, 130 = Esc/^C
+        return []
+    picked = []
+    for line in r.stdout.splitlines():
+        try:
+            picked.append(rows[int(line.split("\t", 1)[0])])
+        except (ValueError, IndexError):
+            continue
+    return picked
+
+
+def parse_selection(answer: str, n: int) -> list[int] | None:
+    """`1,3`, `2-4`, `all` → zero-based indices. None when it doesn't parse.
+
+    Deliberately strict: a selection that is half-understood would move the
+    wrong session's history, and there is always another prompt to be had.
+    """
+    answer = answer.strip().lower()
+    if not answer:
+        return None
+    if answer == "all":
+        return list(range(n))
+    out = []
+    for part in answer.replace(" ", ",").split(","):
+        if not part:
+            continue
+        if "-" in part[1:]:
+            lo, _, hi = part.partition("-")
+            if not (lo.isdigit() and hi.isdigit()):
+                return None
+            lo, hi = int(lo), int(hi)
+            if not (1 <= lo <= hi <= n):
+                return None
+            out.extend(range(lo - 1, hi))
+        else:
+            if not part.isdigit() or not 1 <= int(part) <= n:
+                return None
+            out.append(int(part) - 1)
+    # dedupe, keep the order typed
+    return list(dict.fromkeys(out)) or None
+
+
+def pick_numbered(rows: list[dict]) -> list[dict]:
+    """The no-fzf path: a numbered list and one prompt."""
+    print("\n" + c("sessions available to move:", "bold"))
+    width = max(len(str(len(rows))), 2)
+    for i, row in enumerate(rows, 1):
+        print(f"  {c(str(i).rjust(width), 'bold')}  {session_label(row)}")
+    print(c("  pick one or more: 1 · 1,3 · 2-4 · all · empty to cancel", "dim"))
+    while True:
+        try:
+            answer = input(c("selection: ", "bold"))
+        except EOFError:
+            return []
+        if not answer.strip():
+            return []
+        picked = parse_selection(answer, len(rows))
+        if picked is not None:
+            return [rows[i] for i in picked]
+        print(c(f"  ? '{answer.strip()}' — pick numbers between 1 and "
+                f"{len(rows)}", "yellow"))
+
+
+def fzf_wanted(mode: str) -> bool:
+    """Whether to reach for fzf at all.
+
+    fzf draws a full-screen UI and reads the keyboard, so launching it with no
+    terminal attached leaves it waiting on input that can never arrive — a
+    hang, not an error. In `auto` it therefore needs a tty; `fzf` forces it
+    anyway, which is what lets a stubbed fzf be tested through a pipe.
+    """
+    return mode == "fzf" or (mode != "plain" and can_prompt())
+
+
+def pick_sessions(rows: list[dict]) -> list[dict]:
+    """Choose from the candidates, however this machine is equipped."""
+    mode = (os.environ.get("CLAUDE_MV_PICKER") or "auto").strip().lower()
+    if fzf_wanted(mode):
+        picked = pick_with_fzf(rows)
+        if picked is not None:
+            return picked
+        if mode == "fzf":
+            print(emsg("CLAUDE_MV_PICKER=fzf, but fzf is not installed"),
+                  file=sys.stderr)
+            return []
+    if not can_prompt():
+        print(emsg("no way to choose a session — stdin is not a tty and fzf "
+                   "is not installed; pass --session <id> instead"),
+              file=sys.stderr)
+        return []
+    return pick_numbered(rows)
+
+
+# ── the folder selector ─────────────────────────────────────────────────────
+# --extract asks for two directories, and both are easy to get subtly wrong by
+# typing: the source is the folder a conversation was BORN in (not where it
+# ended up), and the destination is a real folder that already exists. So both
+# are offered as a pick rather than a spelling, starting from somewhere
+# sensible — the cwd for the source, the given path for the destination.
+#
+# Each row carries how many sessions that directory has, which is what turns a
+# guess into a choice: on the source it shows where the history actually is,
+# and on the destination it warns that something is already there.
+
+def session_count(profiles: list[str], path: str) -> int:
+    """Sessions homed in `path`, across every profile.
+
+    Cheap enough to run per row: enc() is a pure string transform, so this is
+    one isdir() and one listdir() per profile, no scanning.
+    """
+    n = 0
+    for profile in profiles:
+        d = os.path.join(profile, "projects", enc(path))
+        try:
+            n += sum(1 for x in os.listdir(d) if x.endswith(".jsonl"))
+        except OSError:
+            continue
+    return n
+
+
+def dir_rows(current: str, profiles: list[str]) -> list[tuple[str, str]]:
+    """(payload, display) for the navigator at `current`."""
+    def note(path):
+        n = session_count(profiles, path)
+        return f"  ({n} session{'' if n == 1 else 's'})" if n else ""
+
+    rows = [(current, f"·  use this directory{note(current)}")]
+    parent = os.path.dirname(current)
+    if parent and parent != current:
+        rows.append((parent, f"↑  {parent}"))
+    try:
+        names = sorted(n for n in os.listdir(current)
+                       if os.path.isdir(os.path.join(current, n))
+                       and n not in SKIP_DIRS)
+    except OSError:
+        names = []
+    for name in names:
+        full = os.path.join(current, name)
+        rows.append((full, f"   {name}/{note(full)}"))
+    return rows
+
+
+SKIP_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv",
+             ".next", "dist", "build", ".DS_Store"}
+
+
+def pick_dir_with_fzf(start: str, title: str,
+                      profiles: list[str]) -> str | None:
+    """Navigate to a directory. None when fzf is unusable, "" when cancelled."""
+    fzf = shutil.which("fzf")
+    if not fzf:
+        return None
+    current = start
+    while True:
+        rows = dir_rows(current, profiles)
+        menu = "\n".join(f"{i}\t{d}" for i, (_, d) in enumerate(rows))
+        try:
+            r = subprocess.run(
+                [fzf, "--with-nth=2..", "--delimiter=\t",
+                 f"--prompt={os.path.basename(current) or '/'} > ",
+                 f"--header={title} — {current}"],
+                input=menu, capture_output=True, text=True)
+        except (OSError, subprocess.SubprocessError):
+            return None
+        if r.returncode != 0:          # Esc / ^C
+            return ""
+        try:
+            chosen = rows[int(r.stdout.split("\t", 1)[0])][0]
+        except (ValueError, IndexError):
+            return ""
+        if chosen == current:          # the "use this directory" row
+            return current
+        current = chosen
+
+
+def make_dir_completer():
+    """A readline completer offering directories only.
+
+    Split out of the prompt so it can be tested: readline drives it from a
+    terminal, which a piped suite has none of, and tab completion is the whole
+    reason the no-fzf prompt is usable rather than a bare path to type.
+    """
+    def complete(text, state):
+        path = os.path.expanduser(text)
+        base = path if path.endswith(os.sep) else os.path.dirname(path)
+        frag = "" if path.endswith(os.sep) else os.path.basename(path)
+        try:
+            names = sorted(n for n in os.listdir(base or ".")
+                           if n.startswith(frag)
+                           and os.path.isdir(os.path.join(base or ".", n)))
+        except OSError:
+            return None
+        hits = [os.path.join(base, n) + os.sep for n in names]
+        return hits[state] if state < len(hits) else None
+    return complete
+
+
+def readline_dir_prompt(start: str, title: str) -> str:
+    """Type a path, with tab completion and `start` as the default.
+
+    readline is stdlib but not guaranteed present, and macOS ships the libedit
+    build, which spells its binding differently — hence both bindings and the
+    quiet give-up. Without it this is still a plain prompt that works, just
+    without tab completing.
+    """
+    try:
+        import readline
+    except ImportError:
+        readline = None
+    if readline is not None:
+        readline.set_completer(make_dir_completer())
+        readline.set_completer_delims(" \t\n")
+        for binding in ("bind ^I rl_complete", "tab: complete"):
+            try:
+                readline.parse_and_bind(binding)
+            except Exception:  # noqa: BLE001 — binding syntax varies by build
+                pass
+    print("\n" + c(title, "bold"))
+    print(c(f"  Tab completes · Enter accepts {start}", "dim"))
+    while True:
+        try:
+            answer = input(c("directory: ", "bold")).strip()
+        except EOFError:
+            return ""
+        path = canonical(answer) if answer else start
+        if os.path.isdir(path):
+            return path
+        print(c(f"  ? {path} is not a directory", "yellow"))
+
+
+def pick_dir(start: str, title: str, profiles: list[str]) -> str:
+    """Choose a directory, however this machine is equipped. "" = cancelled."""
+    mode = (os.environ.get("CLAUDE_MV_PICKER") or "auto").strip().lower()
+    if fzf_wanted(mode):
+        picked = pick_dir_with_fzf(start, title, profiles)
+        if picked is not None:
+            return picked
+        if mode == "fzf":
+            print(emsg("CLAUDE_MV_PICKER=fzf, but fzf is not installed"),
+                  file=sys.stderr)
+            return ""
+    if not can_prompt():
+        print(emsg("nothing to choose a directory with — stdin is not a tty "
+                   "and fzf is not installed; pass the paths as arguments "
+                   "with --no-browse"), file=sys.stderr)
+        return ""
+    return readline_dir_prompt(start, title)
+
+
 # ── restore points ──────────────────────────────────────────────────────────
 
 def create_restore_point(stamp: str, src: str, dst: str, mode: str,
@@ -394,7 +921,6 @@ def create_restore_point(stamp: str, src: str, dst: str, mode: str,
 
     Returns the restore-point path, or None when there is nothing to save.
     """
-    entries = []   # {"type": "dir"|"file", "original": path, "copy": rel}
     created = []   # brand-new paths the migration creates (for restore rm)
     to_save = []   # (path, is_dir) collected first so an empty run makes no dir
 
@@ -409,6 +935,20 @@ def create_restore_point(stamp: str, src: str, dst: str, mode: str,
             to_save.append((plan["cfg"], False))
         if plan["hist"]:
             to_save.append((plan["hist"], False))
+    return write_restore_point(stamp, to_save, created,
+                               {"src": src, "dst": dst, "mode": mode,
+                                "moved": moved})
+
+
+def write_restore_point(stamp: str, to_save: list, created: list,
+                        extra: dict) -> str | None:
+    """Snapshot `to_save` under a fresh stamp dir and write its manifest.
+
+    Shared by the folder move and the session move, which differ only in what
+    they collect: the manifest is the contract --restore reads back, so both
+    shapes must be written by the same code or one of them drifts untested.
+    """
+    entries = []   # {"type": "dir"|"file", "original": path, "copy": rel}
     if not to_save:
         return None
 
@@ -427,9 +967,8 @@ def create_restore_point(stamp: str, src: str, dst: str, mode: str,
             shutil.copy2(path, copy)
         entries.append({"type": "dir" if is_dir else "file",
                         "original": path, "copy": rel})
-    manifest = {"stamp": os.path.basename(rp), "src": src, "dst": dst,
-                "mode": mode, "moved": moved, "entries": entries,
-                "created": created}
+    manifest = {"stamp": os.path.basename(rp), "entries": entries,
+                "created": created, **extra}
     with open(os.path.join(rp, "manifest.json"), "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2)
     return rp
@@ -474,13 +1013,21 @@ def cmd_restore(arg: str, force: bool) -> int:
 
     # Pre-`moved` restore points always came from a real move.
     was_move = m.get("moved", True)
+    sessions = m.get("sessions") or []
+    if m.get("kind") == "sessions":
+        undoing = (f"the re-homing of {c(str(len(sessions)), 'bold')} "
+                   f"session{'' if len(sessions) == 1 else 's'} ")
+    else:
+        undoing = "" if was_move else "the history re-key "
     print(f"restore point {c(stamp, 'bold')} "
-          f"{c('[' + m['mode'] + ']', 'dim')} — will undo "
-          f"{'' if was_move else 'the history re-key '}"
+          f"{c('[' + m['mode'] + ']', 'dim')} — will undo {undoing}"
           f"{c(src, 'cyan')} {c('→', 'dim')} {c(dst, 'cyan')}:")
     move_back = was_move and os.path.isdir(dst) and not os.path.exists(src)
     if move_back:
         print(f"  mv {c(dst, 'cyan')} {c('→', 'dim')} {c(src, 'cyan')}")
+    elif m.get("kind") == "sessions":
+        print(c(f"  (--extract run: no folder was moved, "
+                f"{dst} stays put)", "dim"))
     elif not was_move:
         print(c(f"  (--already-moved run: no folder move to undo, "
                 f"{dst} stays put)", "dim"))
@@ -538,11 +1085,22 @@ def cmd_restore(arg: str, force: bool) -> int:
 
 # ── migration ───────────────────────────────────────────────────────────────
 
+def overwrite_backup_wanted() -> bool:
+    """Whether a successful overwrite keeps its restore point.
+
+    On by default — it is the only archive of the history the overwrite threw
+    away, and so the only thing that makes that mode undoable. Opt out with
+    CLAUDE_MV_OVERWRITE_BACKUP=0.
+    """
+    return (os.environ.get("CLAUDE_MV_OVERWRITE_BACKUP") or "1") \
+        .strip().lower() not in ("0", "false", "no", "off")
+
+
 def new_tally() -> dict:
     """Counters the appliers add to, so the run can close with one line of
     totals rather than leaving the reader to add up the per-profile sections.
     Summed across profiles: a two-profile move reports both."""
-    return {"dirs": 0, "sessions": 0, "keys": 0, "history": 0}
+    return {"dirs": 0, "sessions": 0, "sidecars": 0, "keys": 0, "history": 0}
 
 
 def summarize(t: dict) -> str:
@@ -563,6 +1121,11 @@ def summarize(t: dict) -> str:
         bits.append(n(t["dirs"], "project dir", "project dirs"))
     if t["sessions"]:
         bits.append(n(t["sessions"], "session file", "session files"))
+    # .get: the folder path's tally predates this counter, and a caller that
+    # builds a tally dict by hand should not have to know about a store its
+    # own code path can never touch.
+    if t.get("sidecars"):
+        bits.append(n(t["sidecars"], "sidecar dir", "sidecar dirs"))
     if t["keys"]:
         bits.append(n(t["keys"], "config key", "config keys"))
     if t["history"]:
@@ -673,6 +1236,454 @@ def apply_plan(plan: dict, old: str, new: str, mode: str,
             tally["history"] += n
 
 
+# ── session migration ───────────────────────────────────────────────────────
+# Moving sessions is a different operation from moving a folder, not a
+# narrower one, and the stores behave differently enough that it gets its own
+# plan/apply pair rather than a flag threaded through the folder path:
+#
+#   projects/<enc>/   source dir STAYS; <id>.jsonl and its <id>/ sidecar move
+#                     into projects/<enc(dst)>/, which is created if needed
+#   session cwd       NOT rewritten — see rehome_session()
+#   config projects   NOT touched — the source project still exists, and
+#                     fabricating a destination entry would transplant its
+#                     trust flag and allowedTools onto a path the user never
+#                     approved. Claude writes the entry on first run there.
+#   history.jsonl     only the entries carrying a moved sessionId
+#
+# Everything else under a profile (todos/, file-history/, session-env/,
+# plans/, tasks/) is keyed by session id alone, so it follows for free — the
+# sidecar dir is the one session-keyed store that lives INSIDE the project
+# dir and therefore has to be carried by hand.
+
+SESSION_CONFLICT_MODES = ("overwrite", "skip", "abort")
+
+
+def build_session_plan(profile: str, rows: list[dict], dst: str) -> dict:
+    """What this profile has to do for the sessions chosen from it."""
+    target_dir = os.path.join(profile, "projects", enc(dst))
+    plan = {"profile": profile, "target_dir": target_dir, "moves": [],
+            "conflicts": [], "cfg": config_json_path(profile), "hist": None,
+            "ids": [r["id"] for r in rows]}
+    for row in rows:
+        sidecar = row["path"][:-len(".jsonl")]
+        item = {"id": row["id"], "jsonl": row["path"],
+                "sidecar": sidecar if os.path.isdir(sidecar) else None,
+                "target": os.path.join(target_dir, row["id"] + ".jsonl"),
+                "target_sidecar": os.path.join(target_dir, row["id"])}
+        # Either half of the destination counts as occupied. A leftover
+        # sidecar with no transcript beside it is odd but real (an interrupted
+        # run, a half-deleted session), and treating it as a clean move would
+        # break the promise the whole up-front detection makes: the transcript
+        # would land, then the sidecar rename would fail onto the existing
+        # directory, stopping halfway. It would also silently attach one
+        # conversation's subagent transcripts to another's.
+        bucket = ("conflicts"
+                  if os.path.exists(item["target"])
+                  or os.path.isdir(item["target_sidecar"])
+                  else "moves")
+        plan[bucket].append(item)
+    hist = os.path.join(profile, "history.jsonl")
+    if os.path.isfile(hist):
+        plan["hist"] = hist
+    return plan
+
+
+def rehome_session(item: dict, target_dir: str, mode: str, dry_run: bool,
+                   tally: dict) -> None:
+    """Relocate one session's transcript and sidecar into the target dir.
+
+    The recorded `cwd` lines are deliberately left as they are. Nothing moved
+    on disk — the session really did start where it says — so rewriting them
+    would falsify the record, exactly as the tool already declines to rewrite
+    paths inside message content. It would also corrupt this shape outright:
+    a session is normally re-homed INTO a subdirectory of where it started,
+    so a prefix remap of old→new would hit the lines already naming the
+    destination a second time (…/recovery → …/recovery/recovery).
+    """
+    tag = c("would", "yellow") if dry_run else c("did", "green")
+    short = c(item["id"][:8], "bold")
+
+    if os.path.exists(item["target"]) or os.path.isdir(item["target_sidecar"]):
+        if mode != "overwrite":
+            print(f"  {tag} skip {short} "
+                  f"{c('(already present at the destination)', 'dim')}")
+            return
+        print(f"  {tag} replace {short} "
+              f"{c('(copy kept in restore point)', 'red')}")
+        if not dry_run:
+            # Both halves go, so the replacement cannot inherit the previous
+            # occupant's subagent transcripts.
+            if os.path.exists(item["target"]):
+                os.remove(item["target"])
+            if os.path.isdir(item["target_sidecar"]):
+                shutil.rmtree(item["target_sidecar"])
+    else:
+        print(f"  {tag} re-home {short} {c('→', 'dim')} "
+              f"{c('projects/' + os.path.basename(target_dir), 'cyan', 'bold')}")
+
+    if not dry_run:
+        os.makedirs(target_dir, exist_ok=True)
+        os.rename(item["jsonl"], item["target"])
+    tally["sessions"] += 1
+
+    if item["sidecar"]:
+        print(f"       {c('+', 'dim')} sidecar "
+              f"{c(os.path.basename(item['sidecar']) + '/', 'cyan')} "
+              f"{c('(subagents, tool results)', 'dim')}")
+        if not dry_run:
+            os.rename(item["sidecar"], item["target_sidecar"])
+        tally["sidecars"] = tally.get("sidecars", 0) + 1
+
+
+def rewrite_history_sessions(path: str, ids: set, dst: str,
+                             dry_run: bool) -> int:
+    """Re-key history entries belonging to the moved sessions.
+
+    Selected by sessionId rather than by path: the whole point is that the
+    source project keeps its OTHER sessions' entries, which a prefix rewrite
+    of `project` could not express.
+    """
+    changed = 0
+    out = []
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            try:
+                obj = json.loads(line.rstrip("\n"))
+            except ValueError:
+                out.append(line)
+                continue
+            if obj.get("sessionId") in ids and obj.get("project") != dst:
+                obj["project"] = dst
+                out.append(json.dumps(obj, ensure_ascii=False,
+                                      separators=(",", ":")) + "\n")
+                changed += 1
+            else:
+                out.append(line)
+    if changed and not dry_run:
+        atomic_write(path, "".join(out))
+    return changed
+
+
+def apply_session_plan(plan: dict, dst: str, mode: str, dry_run: bool,
+                       tally: dict) -> None:
+    tag = c("would", "yellow") if dry_run else c("did", "green")
+    print("\n" + c("──", "dim") + " " + c("profile", "dim") + " " +
+          c(plan["profile"], "bold"))
+
+    for item in plan["moves"] + plan["conflicts"]:
+        rehome_session(item, plan["target_dir"], mode, dry_run, tally)
+
+    if plan["hist"]:
+        moved_ids = {i["id"] for i in plan["moves"]}
+        if mode == "overwrite":
+            moved_ids |= {i["id"] for i in plan["conflicts"]}
+        n = rewrite_history_sessions(plan["hist"], moved_ids, dst, dry_run)
+        if n:
+            print(f"  {tag} re-key {c(str(n), 'bold')} entr"
+                  f"{'y' if n == 1 else 'ies'} in "
+                  f"{c('history.jsonl', 'bold')} {c('→', 'dim')} "
+                  f"{c(dst, 'cyan')}")
+            tally["history"] += n
+
+
+def create_session_restore_point(stamp: str, src: str, dst: str, mode: str,
+                                 plans: list[dict]) -> str | None:
+    to_save, created = [], []
+    for plan in plans:
+        for item in plan["moves"] + plan["conflicts"]:
+            to_save.append((item["jsonl"], False))
+            if item["sidecar"]:
+                to_save.append((item["sidecar"], True))
+            # Both halves of the destination are listed as created, so a
+            # restore removes the relocated copy instead of leaving the
+            # session sitting in two project dirs at once.
+            created.append(item["target"])
+            if item["sidecar"]:
+                created.append(item["target_sidecar"])
+        for item in plan["conflicts"]:
+            # Whatever the destination already had, which an overwrite would
+            # delete. Either half can be there on its own, so both are tested
+            # rather than assumed. Saving them also puts them in `originals`,
+            # which is what stops the restore from removing what it just put
+            # back.
+            if os.path.exists(item["target"]):
+                to_save.append((item["target"], False))
+            if os.path.isdir(item["target_sidecar"]):
+                to_save.append((item["target_sidecar"], True))
+        if plan["hist"]:
+            to_save.append((plan["hist"], False))
+    ids = sorted({i for plan in plans for i in plan["ids"]})
+    return write_restore_point(stamp, to_save, created,
+                               {"src": src, "dst": dst, "mode": mode,
+                                "moved": False, "kind": "sessions",
+                                "sessions": ids})
+
+
+def check_live_ids(profiles: list[str], ids: set) -> list[str]:
+    """Live Claude processes running one of the sessions about to be moved.
+
+    Sharper than the folder guard's cwd test: the folder is not moving here,
+    so what matters is whether a session's own transcript is being appended
+    to while we relocate it.
+    """
+    live = []
+    for profile in profiles:
+        sess_dir = os.path.join(profile, "sessions")
+        if not os.path.isdir(sess_dir):
+            continue
+        for name in sorted(os.listdir(sess_dir)):
+            if not name.endswith(".json"):
+                continue
+            try:
+                with open(os.path.join(sess_dir, name), encoding="utf-8") as f:
+                    obj = json.load(f)
+            except (OSError, ValueError):
+                continue
+            sid, pid = obj.get("sessionId"), obj.get("pid")
+            if not (sid in ids and pid):
+                continue
+            try:
+                os.kill(int(pid), 0)
+            except (OSError, ValueError):
+                continue  # stale record, process gone
+            live.append(f"pid {pid} running session {sid[:8]} ({profile})")
+    return live
+
+
+def resolve_extract_paths(args, profiles: list[str]):
+    """Settle src and dst for --extract, asking where it is allowed to.
+
+    Three steps, in the order a person works: which folder holds the history,
+    which sessions, and where they should go. The first and last are folder
+    pickers seeded with a sensible starting point — the cwd for the source,
+    whatever was passed for the destination.
+
+    Positional arguments are the seeds, not a bypass: passing a path starts
+    its picker there rather than skipping it, so the guide stays one flow with
+    fewer keystrokes rather than two different ones. --no-browse is the
+    bypass, and then both paths are required, because the destination is the
+    one thing this mode will not guess.
+
+    Returns (src, dst), or (None, None) when the run was cancelled or refused.
+    """
+    src, dst = args.src, args.dst
+    # One positional can only be the destination: src has a default and dst
+    # never does, so `claude-mv --extract ~/code/newproj` is unambiguous.
+    if dst is None and src is not None:
+        src, dst = None, src
+
+    if args.no_browse:
+        # `not dst` is belt to the swap's braces: after it, a set src implies
+        # a set dst, so this is currently equivalent to `if not src`. Kept
+        # because it states the requirement rather than a consequence of the
+        # line above — if the swap ever changes, this still says what it means.
+        if not src or not dst:
+            print(emsg("--no-browse needs both paths given: "
+                       "claude-mv --extract --no-browse <src> <dst>"),
+                  file=sys.stderr)
+            return None, None
+        return canonical(src), canonical(dst)
+
+    src = pick_dir(canonical(src) if src else os.path.realpath(os.getcwd()),
+                   "Which folder holds the sessions?", profiles)
+    if not src:
+        print(c("cancelled — nothing was changed", "yellow"))
+        return None, None
+    return src, dst          # dst is settled after the sessions are chosen
+
+
+def settle_destination(args, src: str, dst: str | None,
+                       profiles: list[str]) -> str | None:
+    """The last step of the guide: where the chosen sessions should land.
+
+    Asked AFTER the sessions are picked, because that is the order the
+    decision is actually made in — you know which conversation you are moving
+    before you know where it belongs. A dst given on the command line seeds
+    the picker rather than skipping it, so Enter confirms it.
+    """
+    if not args.no_browse:
+        start = canonical(dst) if dst else src
+        if not os.path.isdir(start):
+            start = src          # a dst that does not exist yet cannot be a
+        dst = pick_dir(start, "Where should they go?", profiles)  # start point
+        if not dst:
+            print(c("cancelled — nothing was changed", "yellow"))
+            return None
+    else:
+        dst = canonical(dst)
+
+    dst = os.path.realpath(dst) if os.path.isdir(dst) else dst
+    if not os.path.isdir(dst):
+        print(emsg(f"destination is not a directory: "
+                   f"{c(dst, 'cyan', stream=sys.stderr)}\n  --extract re-keys "
+                   f"history onto a folder that already exists; it moves "
+                   f"nothing itself"), file=sys.stderr)
+        return None
+    if src == dst:
+        print(emsg("source and destination are the same path — nothing to "
+                   "re-key"), file=sys.stderr)
+        return None
+    return dst
+
+
+def run_session_mode(args, src: str, dst: str | None,
+                     profiles: list[str]) -> int:
+    """--extract: move chosen sessions' history from `src` to `dst`."""
+    # --limit exists to keep the picker readable. Naming ids outright is not
+    # the picker, and silently not finding a session because it sorted below
+    # an arbitrary cutoff would be the worst kind of no-op.
+    rows = find_sessions(src, profiles, 0 if args.session else args.limit)
+    if rows is None:
+        return 1                      # the source already said why
+    if not rows:
+        print(emsg(f"no sessions are homed in "
+                   f"{c(src, 'cyan', stream=sys.stderr)}\n  (a session started "
+                   f"elsewhere and cd'd in is homed where it STARTED — try "
+                   f"that path)"), file=sys.stderr)
+        return 1
+
+    if args.session:
+        chosen, missing, ambiguous = [], [], []
+        for want in args.session:
+            hits = [r for r in rows if r["id"] == want
+                    or r["id"].startswith(want)]
+            if not hits:
+                missing.append(want)
+            elif len(hits) > 1:
+                # Two ids sharing a prefix is unlikely and entirely possible.
+                # Guessing which was meant would re-home the wrong
+                # conversation, so say so and let the user be specific.
+                ambiguous.append((want, [h["id"] for h in hits]))
+            else:
+                chosen.append(hits[0])
+        if missing:
+            print(emsg(f"not homed in {c(src, 'cyan', stream=sys.stderr)}: "
+                       f"{', '.join(sorted(missing))}"), file=sys.stderr)
+            return 1
+        if ambiguous:
+            for want, hits in ambiguous:
+                print(emsg(f"{c(want, 'bold', stream=sys.stderr)} matches "
+                           f"{len(hits)} sessions:"), file=sys.stderr)
+                for hit in hits:
+                    print(f"  {c(hit, 'yellow', stream=sys.stderr)}",
+                          file=sys.stderr)
+            return 1
+        # dedupe: two spellings of one session select it once
+        chosen = list({r["id"]: r for r in chosen}.values())
+    else:
+        print(c("sessions homed in ", "bold") + c(src, "cyan") +
+              c(f" ({len(rows)} found)", "dim"))
+        chosen = pick_sessions(rows)
+        if not chosen:
+            print(c("nothing selected — nothing was changed", "yellow"))
+            return 1
+
+    # Step three: now that the sessions are known, where they go.
+    dst = settle_destination(args, src, dst, profiles)
+    if dst is None:
+        return 1
+
+    ids = {r["id"] for r in chosen}
+    live = check_live_ids(profiles, ids)
+    if live and not args.force:
+        print(emsg("live Claude session(s) among the ones selected — close "
+                   "them or use --force:"), file=sys.stderr)
+        for entry in live:
+            print(f"  {c(entry, 'yellow', stream=sys.stderr)}",
+                  file=sys.stderr)
+        return 1
+
+    by_profile = {}
+    for row in chosen:
+        by_profile.setdefault(row["profile"], []).append(row)
+    plans = [build_session_plan(p, rs, dst) for p, rs in by_profile.items()]
+
+    mode = args.on_conflict or "skip"
+    if any(plan["conflicts"] for plan in plans):
+        print("\n" + wmsg(c("already present at the destination:", "bold")))
+        for plan in plans:
+            for item in plan["conflicts"]:
+                print(f"  {c(item['id'][:8], 'yellow')}  "
+                      f"{c('[' + plan['profile'] + ']', 'dim')}")
+        if args.on_conflict is None:
+            print(c(f"  keeping the destination's copy "
+                    f"(--on-conflict overwrite to replace it)", "dim"))
+
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    rp = None
+    if args.dry_run:
+        print(f"would create restore point "
+              f"{c(os.path.join(RESTORE_ROOT, stamp), 'dim')}")
+    else:
+        rp = create_session_restore_point(stamp, src, dst, mode, plans)
+        if rp:
+            print(c("restore point:", "dim") + " " + c(rp, "dim"))
+
+    print(c("would re-home" if args.dry_run else "re-homing", "bold") + " " +
+          c(str(len(chosen)), "bold") +
+          f" session{'' if len(chosen) == 1 else 's'} "
+          f"{c(src, 'cyan')} {c('→', 'dim')} {c(dst, 'cyan')} " +
+          c("(no folder is moved)", "dim"))
+
+    tally = new_tally()
+    try:
+        for plan in plans:
+            apply_session_plan(plan, dst, mode, args.dry_run, tally)
+    except Exception as e:  # noqa: BLE001 — anything mid-migration
+        print("\n" + c("❌", "red", "bold", stream=sys.stderr) + " " +
+              emsg(f"migration failed midway: {e}"), file=sys.stderr)
+        if rp:
+            print(f"   roll everything back with:  claude-mv --restore "
+                  f"{c(os.path.basename(rp), 'bold', stream=sys.stderr)}",
+                  file=sys.stderr)
+        return 3
+
+    summary = summarize(tally)
+    if args.dry_run:
+        print("\n" + (c("would migrate", "bold") + " " + summary + "\n"
+                      if summary else "") +
+              c("(dry run — nothing was changed)", "dim"))
+        return 0
+
+    # A destination Claude has never run in has no config entry yet. Saying so
+    # is worth a line: the sessions resume fine without one, but the silence
+    # would otherwise look like a store the tool forgot.
+    cfg_note = ""
+    for plan in plans:
+        if not os.path.isfile(plan["cfg"]):
+            continue
+        try:
+            with open(plan["cfg"], encoding="utf-8") as f:
+                projects = json.load(f).get("projects") or {}
+        except (OSError, ValueError):
+            continue
+        if dst not in projects:
+            cfg_note = (c("   no config entry for the destination yet — "
+                          "Claude writes one on first run there\n"
+                          "   (trust and tool permissions are deliberately "
+                          "not copied across)\n", "dim"))
+            break
+
+    if rp:
+        if (mode == "overwrite" and any(p["conflicts"] for p in plans)
+                and overwrite_backup_wanted()):
+            print("\n" + c("✅ done", "green", "bold") +
+                  (f" — {summary}" if summary else "") + "\n" + cfg_note +
+                  c("   replaced destination sessions are kept in the restore "
+                    "point:", "dim") + f"\n   {c(rp, 'cyan')}\n" +
+                  c("   undo everything:  ", "dim") +
+                  f"claude-mv --restore {os.path.basename(rp)}\n" +
+                  c("   discard for good: ", "dim") + f"rm -rf {rp}")
+            return 0
+        shutil.rmtree(rp)
+    print("\n" + c("✅ done", "green", "bold") +
+          (f" — {summary}" if summary else "") + "\n" + cfg_note +
+          c(f"   `claude --resume` in {dst} will now find "
+            f"{'it' if len(chosen) == 1 else 'them'} "
+            f"(restore point cleaned up)", "dim"))
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(
         prog="claude-mv",
@@ -686,9 +1697,26 @@ def main() -> int:
                          "move nothing, just re-key the history stranded on "
                          "<src-dir> onto <dst> (src must be gone, dst must "
                          "exist)")
-    ap.add_argument("--on-conflict", choices=CONFLICT_MODES,
+    ap.add_argument("--on-conflict",
+                    choices=sorted(set(CONFLICT_MODES) |
+                                   set(SESSION_CONFLICT_MODES)),
                     help="policy when destination history already exists "
-                         "(default: ask on a tty, abort otherwise)")
+                         "(default: ask on a tty, abort otherwise; with "
+                         "--extract: overwrite/skip/abort, default skip)")
+    ap.add_argument("--no-browse", action="store_true",
+                    help="with --extract: don't browse for the folders — take "
+                         "<src> and <dst> as arguments instead (both then "
+                         "required). Choosing the sessions is unaffected; add "
+                         "--session to skip that too")
+    ap.add_argument("--extract", action="store_true",
+                    help="move individual SESSIONS out of <src>'s history "
+                         "onto <dst> instead of moving a folder — for when a "
+                         "project was born mid-session in a parent directory")
+    ap.add_argument("--session", action="append", default=[], metavar="ID",
+                    help="session id to move (repeatable); skips the picker. "
+                         "An 8-character prefix is enough")
+    ap.add_argument("--limit", type=int, default=50, metavar="N",
+                    help="how many sessions to offer (default 50)")
     ap.add_argument("--restore", nargs="?", const="list", metavar="STAMP",
                     help="list restore points, or roll one back "
                          "(--restore <stamp|latest>)")
@@ -702,12 +1730,44 @@ def main() -> int:
 
     if args.restore is not None:
         return cmd_restore(args.restore, args.force)
-    if not args.src or not args.dst:
+    if args.no_browse and not args.extract:
+        ap.error("--no-browse only applies to --extract; the folder move "
+                 "browses for nothing to begin with")
+    # --extract fills its own paths in (cwd, then a picker), so it is exempt
+    # from the requirement the folder move has.
+    if not args.extract and (not args.src or not args.dst):
         ap.error("src and dst are required (or use --restore)")
     if args.already_moved and args.on_conflict == "rename-only":
         ap.error("--on-conflict rename-only is meaningless with "
                  "--already-moved (there is no mv to do on its own) — "
                  "use abort to do nothing")
+    if args.extract and args.already_moved:
+        ap.error("--extract and --already-moved are different operations: "
+                 "one moves chosen sessions out of a folder's history, the "
+                 "other re-keys a whole folder's history after a rename")
+    if args.extract and args.on_conflict not in (None, *SESSION_CONFLICT_MODES):
+        ap.error(f"--on-conflict {args.on_conflict} does not apply to "
+                 f"--extract (individual session files either exist at the "
+                 f"destination or do not) — use "
+                 f"{{{','.join(SESSION_CONFLICT_MODES)}}}")
+    if args.session and not args.extract:
+        ap.error("--session <id> selects which sessions to move, so it needs "
+                 "--extract")
+
+    if args.extract:
+        # Paths are settled inside the mode — the source picker needs the
+        # profiles to annotate its rows, and the destination is not asked for
+        # until the sessions are chosen. Note the under(dst, src) guard the
+        # folder move applies is deliberately absent: re-homing a session INTO
+        # a subdirectory of where it started is the whole point here.
+        profiles = [p for p in args.profile if os.path.isdir(p)]
+        if not profiles:
+            print(emsg("no existing --profile dirs given"), file=sys.stderr)
+            return 1
+        src, dst = resolve_extract_paths(args, profiles)
+        if src is None:
+            return 1
+        return run_session_mode(args, src, dst, profiles)
 
     src = canonical(args.src)
     dst = canonical(args.dst)
@@ -729,6 +1789,12 @@ def main() -> int:
         # The folder is already living here, so sessions started in it record
         # the fully physical path — resolve the last component too.
         dst = os.path.realpath(dst)
+        # Unreachable by construction, and kept as the statement of intent:
+        # dst has to exist to get here and src has to be gone, so the two
+        # cannot be equal — identical paths are already refused above, by the
+        # "old path still exists" check. --extract has the same rule and there
+        # it IS reachable (nothing has to be missing), which is where it earns
+        # its test.
         if src == dst:
             print(emsg("src and dst are the same path — nothing to "
                        "re-key"), file=sys.stderr)
@@ -892,10 +1958,7 @@ def main() -> int:
             print("\n" + c("(dry run — nothing was changed)", "dim"))
         return 0
 
-    # Overwrite keeps the restore point as the archive of the discarded
-    # history — on by default, opt out with CLAUDE_MV_OVERWRITE_BACKUP=0.
-    keep_backup = (os.environ.get("CLAUDE_MV_OVERWRITE_BACKUP") or "1") \
-        .strip().lower() not in ("0", "false", "no", "off")
+    keep_backup = overwrite_backup_wanted()
     if rp:
         if has_conflicts and mode == "overwrite" and keep_backup:
             # One command per line: joined with a separator this ran past

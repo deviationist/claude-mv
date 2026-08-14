@@ -393,8 +393,131 @@ class TestFormatConformance(unittest.TestCase):
                     break
         self.assertTrue(seen, "no entry had a 'project' field any more")
 
+    def test_history_entries_carry_the_session_that_wrote_them(self):
+        """What makes --extract possible at all.
+
+        The folder path re-keys history by path prefix; moving ONE session out
+        of a shared project needs the entries attributable to it, and
+        sessionId is the only field that can do that. If Claude drops it,
+        selective re-keying stops being expressible and the mode has to go
+        back to the drawing board rather than quietly re-key too much.
+        """
+        hist = os.path.join(REAL_PROFILE, "history.jsonl")
+        if not os.path.isfile(hist):
+            self.skipTest("no history.jsonl")
+        seen = with_session = 0
+        with open(hist, encoding="utf-8") as f:
+            for line in f:
+                try:
+                    obj = json.loads(line)
+                except ValueError:
+                    continue
+                if isinstance(obj.get("project"), str):
+                    seen += 1
+                    with_session += isinstance(obj.get("sessionId"), str)
+                if seen >= 50:
+                    break
+        if not seen:
+            self.skipTest("no entries with a project field")
+        self.assertEqual(seen, with_session,
+                         "history entries no longer carry sessionId — "
+                         "--extract cannot tell one session's prompts apart")
+
+    def test_user_turn_content_is_a_string_or_a_list_of_typed_blocks(self):
+        """What the picker's labels are read out of.
+
+        Both shapes occur and the list is much the commoner one, with its
+        blocks carrying a `type` we filter on — take that away and every row
+        would be labelled with tool output instead of the question asked.
+        """
+        root = os.path.join(REAL_PROFILE, "projects")
+        if not os.path.isdir(root):
+            self.skipTest("no projects/ dir")
+        seen_str = seen_blocks = 0
+        for name in sorted(os.listdir(root)):
+            d = os.path.join(root, name)
+            if not os.path.isdir(d):
+                continue
+            for fn in sorted(os.listdir(d)):
+                if not fn.endswith(".jsonl"):
+                    continue
+                with open(os.path.join(d, fn), encoding="utf-8") as f:
+                    for line in f:
+                        try:
+                            obj = json.loads(line)
+                        except ValueError:
+                            continue
+                        if obj.get("type") != "user":
+                            continue
+                        content = (obj.get("message") or {}).get("content")
+                        if isinstance(content, str):
+                            seen_str += 1
+                        elif isinstance(content, list):
+                            for b in content:
+                                self.assertIsInstance(b, dict)
+                                self.assertIn("type", b, "content blocks no "
+                                              "longer carry a type")
+                                seen_blocks += 1
+            if seen_str and seen_blocks:
+                return
+        if not (seen_str or seen_blocks):
+            self.skipTest("no user turns with content")
+
+    def test_a_session_sidecar_sits_beside_its_transcript(self):
+        """The one session-keyed store that lives INSIDE a project dir.
+
+        todos/, file-history/ and friends are keyed by session id at the
+        profile root, so they follow a session anywhere for free. This one
+        does not: <id>/ sits next to <id>.jsonl, so moving a single session
+        has to carry it by hand. If the layout changes, that hand-carry is
+        either wrong or unnecessary — either way this should say so.
+        """
+        root = os.path.join(REAL_PROFILE, "projects")
+        if not os.path.isdir(root):
+            self.skipTest("no projects/ dir")
+        for name in sorted(os.listdir(root)):
+            d = os.path.join(root, name)
+            if not os.path.isdir(d):
+                continue
+            entries = set(os.listdir(d))
+            for entry in sorted(entries):
+                if (os.path.isdir(os.path.join(d, entry))
+                        and f"{entry}.jsonl" in entries):
+                    return          # found the shape; nothing more to prove
+        self.skipTest("no session sidecar dir in the real profile")
+
+    def test_session_transcripts_are_written_compactly(self):
+        """Not claude-mv's own concern — it parses JSON — but the fixtures
+        imitate this byte shape, and ccfind (our session source when it is
+        installed) reads the cwd out with a regex that assumes no space after
+        the colon. A prettier format upstream would make the two sources
+        disagree, so notice it here rather than in a user's picker."""
+        root = os.path.join(REAL_PROFILE, "projects")
+        if not os.path.isdir(root):
+            self.skipTest("no projects/ dir")
+        for name in sorted(os.listdir(root)):
+            d = os.path.join(root, name)
+            if not os.path.isdir(d):
+                continue
+            for fn in sorted(os.listdir(d)):
+                if not fn.endswith(".jsonl"):
+                    continue
+                with open(os.path.join(d, fn), encoding="utf-8") as f:
+                    for line in f:
+                        if '"cwd"' not in line:
+                            continue
+                        self.assertIn('"cwd":"', line,
+                                      "session jsonl is no longer compact")
+                        return
+        self.skipTest("no session line with a cwd")
+
     def test_live_session_records_still_carry_cwd_and_pid(self):
-        """What the live-session guard reads before it will let a move run."""
+        """What the live-session guard reads before it will let a move run.
+
+        sessionId too: the folder guard asks "is anything running in this
+        path", the session guard asks "is THIS session running", and only the
+        second can answer for a move that leaves the folder alone.
+        """
         d = os.path.join(REAL_PROFILE, "sessions")
         if not os.path.isdir(d):
             self.skipTest("no sessions/ dir")
@@ -405,9 +528,22 @@ class TestFormatConformance(unittest.TestCase):
             obj = json.load(f)
         self.assertIn("cwd", obj)
         self.assertIn("pid", obj)
+        self.assertIn("sessionId", obj)
 
 
 # ── end-to-end scaffolding ──────────────────────────────────────────────────
+
+def jsonl(obj):
+    """Serialize a fixture line the way Claude Code actually writes one.
+
+    Compact, with no space after ':' — verified against the real profile by
+    the conformance layer. It matters beyond byte-fidelity: tools that scan
+    transcripts with a regex rather than a JSON parser (ccfind extracts its
+    cwd column with `grep -o '"cwd":"[^"]*"'`) simply do not see a spaced
+    fixture, so a prettier one would quietly break the cross-source test.
+    """
+    return json.dumps(obj, separators=(",", ":")) + "\n"
+
 
 class FixtureCase(unittest.TestCase):
     """Builds a disposable Claude profile + project tree per test."""
@@ -449,17 +585,51 @@ class FixtureCase(unittest.TestCase):
                 lines.append({"type": "summary", "summary": "s", "leafUuid": sid})
             with open(os.path.join(d, f"{sid}.jsonl"), "w") as f:
                 for obj in lines:
-                    f.write(json.dumps(obj) + "\n")
+                    f.write(jsonl(obj))
         return d
+
+    def make_session(self, home_cwd, sid, prompt="hi", later_cwd=None,
+                     sidecar=False, mtime=None):
+        """One session homed in `home_cwd` — the --extract unit of work.
+
+        `later_cwd` adds a second turn recorded somewhere else, which is the
+        whole shape this feature exists for: a session that starts in a parent
+        directory and cd's into the project it just created. `sidecar` adds the
+        <id>/ dir Claude puts beside the transcript for subagents and tool
+        results, which lives INSIDE the project dir and so has to be carried
+        by hand when a single session moves.
+        """
+        d = os.path.join(self.projects, cm.enc(home_cwd))
+        os.makedirs(d, exist_ok=True)
+        lines = [{"type": "user", "cwd": home_cwd, "sessionId": sid,
+                  "message": {"role": "user", "content": prompt}}]
+        if later_cwd:
+            lines.append({"type": "user", "cwd": later_cwd, "sessionId": sid,
+                          "message": {"role": "user", "content": "and now here"}})
+        lines.append({"type": "summary", "summary": "s", "leafUuid": sid})
+        path = os.path.join(d, f"{sid}.jsonl")
+        with open(path, "w") as f:
+            for obj in lines:
+                f.write(jsonl(obj))
+        if sidecar:
+            sub = os.path.join(d, sid, "subagents")
+            os.makedirs(sub, exist_ok=True)
+            with open(os.path.join(sub, "agent-1.jsonl"), "w") as f:
+                f.write(jsonl({"type": "user", "cwd": home_cwd}))
+        if mtime is not None:
+            os.utime(path, (mtime, mtime))
+        return path
 
     def add_config(self, cwd, **fields):
         entry = {"allowedTools": [], "hasTrustDialogAccepted": True}
         entry.update(fields)
         self.config["projects"][cwd] = entry
 
-    def add_history(self, cwd, display="do a thing"):
-        self.history.append({"display": display, "pastedContents": {},
-                             "project": cwd})
+    def add_history(self, cwd, display="do a thing", session=None):
+        entry = {"display": display, "pastedContents": {}, "project": cwd}
+        if session is not None:
+            entry["sessionId"] = session
+        self.history.append(entry)
 
     def add_live_session(self, cwd, pid):
         d = os.path.join(self.profile, "sessions")
@@ -472,18 +642,25 @@ class FixtureCase(unittest.TestCase):
             json.dump(self.config, f, indent=2)
         with open(os.path.join(self.profile, "history.jsonl"), "w") as f:
             for obj in self.history:
-                f.write(json.dumps(obj) + "\n")
+                f.write(jsonl(obj))
 
     # -- runner + assertions ------------------------------------------------
 
-    def run_mv(self, *args, expect=0, stdin="", home=None):
+    def run_mv(self, *args, expect=0, stdin="", home=None, env_extra=None,
+               cwd=None):
         env = dict(os.environ, CLAUDE_MV_RESTORE_ROOT=self.restore_root)
         env.pop("CLAUDE_MV_FORCE_PROMPT", None)
+        # A ccfind on the developer's machine must not decide what the suite
+        # tests: every session test pins its own source explicitly.
+        for k in ("CLAUDE_MV_SOURCE", "CLAUDE_MV_PICKER",
+                  "CLAUDE_MV_CCFIND_SOURCE", "CLAUDE_MV_CCFIND_BIN"):
+            env.pop(k, None)
         if home:                      # for the ~ expansion test
             env["HOME"] = home
+        env.update(env_extra or {})
         r = subprocess.run(
             [sys.executable, SCRIPT, "--profile", self.profile, *args],
-            capture_output=True, text=True, input=stdin, env=env)
+            capture_output=True, text=True, input=stdin, env=env, cwd=cwd)
         self.assertEqual(
             r.returncode, expect,
             f"exit {r.returncode} != {expect}\n--- stdout ---\n{r.stdout}\n"
@@ -605,6 +782,34 @@ class TestPlainMove(FixtureCase):
         self.run_mv("--force", old, new)
         self.assertTrue(os.path.isdir(new))
 
+    def test_the_guard_rails_refuse_before_anything_moves(self):
+        """The folder move's four refusals. Each was reachable and none was
+        exercised — a coverage sweep found them, so they are pinned now.
+        Grouped because they share one shape: report, change nothing, exit 1.
+        """
+        old = self.make_folder("old")
+        self.make_project(old)
+        self.write_fixture()
+
+        # A path that exists but is not a directory: mv-into-dir does not
+        # apply, so it lands on the collision check rather than becoming
+        # `<dir>/old`, which is what an existing *directory* correctly does.
+        occupied = os.path.join(self.code, "occupied")
+        with open(occupied, "w") as f:
+            f.write("in the way")
+
+        cases = [
+            ((old, occupied), "destination exists"),
+            ((old, os.path.join(old, "inside")), "into itself"),
+            ((old, os.path.join(self.tmp, "no-such-parent", "x")),
+             "no such directory"),
+        ]
+        for args, expected in cases:
+            r = self.run_mv(*args, expect=1)
+            self.assertIn(expected, r.stderr, args)
+            self.assertTrue(os.path.isdir(old), "src moved despite refusing")
+        self.assertEqual(self.restore_stamps(), [])
+
     def test_missing_src_hints_at_already_moved(self):
         r = self.run_mv(os.path.join(self.code, "gone"),
                         os.path.join(self.code, "new"), expect=1)
@@ -612,6 +817,97 @@ class TestPlainMove(FixtureCase):
 
 
 # ── end-to-end: how src/dst are spelled ─────────────────────────────────────
+
+class TestFolderConflicts(FixtureCase):
+    """The folder move's conflict policies, end to end. The prompt itself is
+    unit-tested above; these are the two answers that change what happens on
+    disk, plus the preview a dry run shows when no policy was given."""
+
+    def _conflicting(self):
+        old = self.make_folder("old")
+        new = os.path.join(self.code, "new")
+        self.make_project(old, sessions=("aaaa-1111",))
+        self.make_project(new, sessions=("dddd-4444",))
+        self.add_config(old)
+        self.add_config(new)
+        self.write_fixture()
+        return old, new
+
+    def test_abort_really_means_nothing_happened(self):
+        """The claim the whole up-front conflict detection exists to make."""
+        old, new = self._conflicting()
+        before = sorted(os.listdir(self.projects))
+
+        r = self.run_mv("--on-conflict", "abort", old, new, expect=1)
+
+        self.assertIn("aborted", r.stdout)
+        self.assertTrue(os.path.isdir(old), "the folder moved despite abort")
+        self.assertFalse(os.path.exists(new))
+        self.assertEqual(sorted(os.listdir(self.projects)), before)
+        self.assertEqual(self.restore_stamps(), [])
+
+    def test_rename_only_moves_the_folder_and_leaves_history_alone(self):
+        old, new = self._conflicting()
+        before = sorted(os.listdir(self.projects))
+
+        r = self.run_mv("--on-conflict", "rename-only", old, new)
+
+        self.assertIn("rename only", r.stdout)
+        self.assertTrue(os.path.isdir(new), "the folder did not move")
+        self.assertFalse(os.path.exists(old))
+        self.assertEqual(sorted(os.listdir(self.projects)), before)
+        self.assertEqual(self.restore_stamps(), [])
+
+    def test_consolidate_keeps_both_when_a_session_file_collides(self):
+        """Same session id on both sides. Merging cannot pick a winner, so it
+        keeps the destination's and says the source copy was left behind —
+        rather than silently overwriting one conversation with another."""
+        old = self.make_folder("old")
+        new = os.path.join(self.code, "new")
+        self.make_project(old, sessions=("aaaa-1111",))
+        self.make_project(new, sessions=("aaaa-1111",))
+        self.write_fixture()
+
+        r = self.run_mv("--on-conflict", "consolidate", old, new)
+
+        self.assertIn("keep both", r.stderr)
+        self.assertIn("not empty after merge", r.stderr)
+        # the source dir survives, still holding the copy that could not move
+        self.assertIn(cm.enc(old), self.project_dirs())
+
+    def test_a_failure_midway_through_a_folder_move_exits_3(self):
+        """The folder move's half of the promise --extract's twin makes: the
+        restore point outlives the failure, and the error names it."""
+        old = self.make_folder("old")
+        new = os.path.join(self.code, "new")
+        self.make_project(old, sessions=("aaaa-1111",))
+        self.add_config(old)
+        self.write_fixture()
+        # The projects/ dir the migration must create, made unwritable so the
+        # rename into it fails after the folder itself has already moved.
+        os.makedirs(self.projects, exist_ok=True)
+        os.chmod(self.projects, 0o500)
+        self.addCleanup(os.chmod, self.projects, 0o700)
+
+        r = self.run_mv(old, new, expect=3)
+
+        self.assertIn("migration failed midway", r.stderr)
+        stamps = self.restore_stamps()
+        self.assertEqual(len(stamps), 1)
+        self.assertIn(stamps[0], r.stderr)
+
+    def test_a_dry_run_with_no_policy_previews_the_safest_one(self):
+        """Nobody can be asked in a dry run that was piped, and refusing
+        would make -n useless exactly when it is most wanted — so it shows
+        what the least destructive policy would do, and says which."""
+        old, new = self._conflicting()
+
+        r = self.run_mv("-n", old, new)
+
+        self.assertIn("previewing --on-conflict consolidate", r.stdout)
+        self.assertTrue(os.path.isdir(old))
+        self.assertEqual(self.restore_stamps(), [])
+
 
 class TestPathForms(FixtureCase):
     """Every spelling of the same folder must migrate the same history.
@@ -804,6 +1100,18 @@ class TestAlreadyMoved(FixtureCase):
         r = self.run_mv("--already-moved", old, new, expect=1)
         self.assertIn("not a directory", r.stderr)
 
+    def test_refuses_when_the_two_paths_are_the_same(self):
+        """Refused — though by the "old path still exists" guard rather than
+        by the same-path one, which cannot be reached here: getting that far
+        needs dst present and src gone, so the two can never be equal. What
+        matters to a user is that it stops and says why."""
+        new = self.make_folder("same")
+        self.make_project(new)
+        self.write_fixture()
+        r = self.run_mv("--already-moved", new, new, expect=1)
+        self.assertIn("old path still exists", r.stderr)
+        self.assertEqual(self.restore_stamps(), [])
+
     def test_refuses_when_no_history_matches_the_old_path(self):
         new = self.make_folder("final")
         self.write_fixture()
@@ -920,6 +1228,53 @@ class TestRestore(FixtureCase):
         self.assertFalse(os.path.exists(old))      # never recreated
         self.assertEqual(self._snapshot(), before)
         self.assertEqual(self.restore_stamps(), [])
+
+    def test_restore_asks_before_it_rolls_anything_back(self):
+        """--restore rewrites history in the other direction, so it confirms.
+        Without a tty and without --force there is nobody to ask, and it says
+        so rather than assuming yes."""
+        old = self.make_folder("old")
+        new = os.path.join(self.code, "new")
+        self.make_project(old)
+        self.make_project(new, sessions=("dddd-4444",))
+        self.write_fixture()
+        self.run_mv("--on-conflict", "overwrite", old, new)
+        stamp = self.restore_stamps()[0]
+
+        r = self.run_mv("--restore", stamp, expect=2)
+        self.assertIn("confirmation needed", r.stderr)
+        self.assertTrue(os.path.isdir(new), "restored without being asked")
+        self.assertEqual(self.restore_stamps(), [stamp])
+
+    def test_declining_the_restore_prompt_changes_nothing(self):
+        old = self.make_folder("old")
+        new = os.path.join(self.code, "new")
+        self.make_project(old)
+        self.make_project(new, sessions=("dddd-4444",))
+        self.write_fixture()
+        self.run_mv("--on-conflict", "overwrite", old, new)
+        stamp = self.restore_stamps()[0]
+
+        r = self.run_mv("--restore", stamp, stdin="n\n", expect=1,
+                        env_extra={"CLAUDE_MV_FORCE_PROMPT": "1"})
+        self.assertIn("aborted", r.stdout)
+        self.assertTrue(os.path.isdir(new))
+        self.assertEqual(self.restore_stamps(), [stamp])
+
+    def test_an_unknown_restore_point_is_named_not_guessed(self):
+        old = self.make_folder("old")
+        new = os.path.join(self.code, "new")
+        self.make_project(old)
+        self.make_project(new, sessions=("dddd-4444",))
+        self.write_fixture()
+        self.run_mv("--on-conflict", "overwrite", old, new)
+
+        r = self.run_mv("--restore", "20990101-000000", "--force", expect=1)
+        self.assertIn("no restore point", r.stderr)
+
+    def test_restore_with_nothing_to_restore_says_so(self):
+        r = self.run_mv("--restore", expect=1)
+        self.assertIn("no restore points", r.stderr)
 
     def test_restore_list(self):
         old = os.path.join(self.code, "pilot")
@@ -1111,6 +1466,1223 @@ class TestMultiProfile(unittest.TestCase):
         self.assertIn("no Claude project history", r.stdout)
 
 
+# ── unit: choosing sessions ─────────────────────────────────────────────────
+
+class TestSelectionParsing(unittest.TestCase):
+    """The numbered picker's input. Strict on purpose: a half-understood
+    selection re-homes the wrong session's history, and there is always
+    another prompt to be had."""
+
+    def test_the_forms_a_person_would_type(self):
+        self.assertEqual(cm.parse_selection("1", 3), [0])
+        self.assertEqual(cm.parse_selection("1,3", 3), [0, 2])
+        self.assertEqual(cm.parse_selection("2-4", 5), [1, 2, 3])
+        self.assertEqual(cm.parse_selection("1 3", 3), [0, 2])
+        self.assertEqual(cm.parse_selection("all", 3), [0, 1, 2])
+        self.assertEqual(cm.parse_selection(" ALL ", 2), [0, 1])
+
+    def test_a_repeat_selects_once(self):
+        self.assertEqual(cm.parse_selection("2,2,1", 3), [1, 0])
+
+    def test_anything_out_of_range_or_unparseable_is_refused(self):
+        for bad in ("0", "4", "1-9", "3-1", "", "  ", "x", "1,x", "1-", "-2",
+                    "1..2"):
+            self.assertIsNone(cm.parse_selection(bad, 3), bad)
+
+    def test_a_snippet_is_one_line_and_bounded(self):
+        """Picker rows are a column; an unbounded or multi-line prompt would
+        wreck the alignment of every row under it."""
+        tmp = tempfile.mkdtemp(prefix="snip-")
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        p = os.path.join(tmp, "s.jsonl")
+        with open(p, "w") as f:
+            f.write(json.dumps({"type": "summary", "summary": "skip me"}) + "\n")
+            f.write(json.dumps({"type": "user", "message": {
+                "role": "user", "content": "first\nline   and   more " * 40}}) + "\n")
+        out = cm.session_snippet(p, limit=40)
+        self.assertNotIn("\n", out)
+        self.assertLessEqual(len(out), 40)
+        self.assertTrue(out.startswith("first line and more"))
+
+    def _snip(self, *turns):
+        tmp = tempfile.mkdtemp(prefix="snip-")
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        p = os.path.join(tmp, "s.jsonl")
+        with open(p, "w") as f:
+            for content in turns:
+                f.write(jsonl({"type": "user",
+                               "message": {"role": "user", "content": content}}))
+        return cm.session_snippet(p)
+
+    def test_content_is_usually_a_list_of_blocks_not_a_string(self):
+        """The shape most real turns have — and the one that would have gone
+        untested. On this machine 14127 of 15330 user turns carry a list."""
+        self.assertEqual(
+            self._snip([{"type": "text", "text": "the typed question"}]),
+            "the typed question")
+
+    def test_a_tool_result_turn_is_not_a_prompt(self):
+        """Tool output is fed back as a `user` turn, and it is the bulk of
+        them — 14049 of 14132 blocks here. A picker row showing a diff or a
+        grep result identifies nothing."""
+        self.assertEqual(
+            self._snip([{"type": "tool_result", "tool_use_id": "x",
+                         "content": "0e91feb Fold session row actions"}],
+                       [{"type": "text", "text": "the typed question"}]),
+            "the typed question")
+
+    def test_only_text_blocks_count_even_if_another_carries_text(self):
+        """No block type outside `text` carries a `text` key in the real
+        profile today, so the type check is guarding against a format that
+        has not arrived. It is still the intent — a thinking or image block
+        is not the question someone asked — and pinning it here means the
+        day one does arrive, the picker does not start labelling rows with
+        the model's internal monologue."""
+        self.assertEqual(
+            self._snip([{"type": "thinking", "text": "internal reasoning"}],
+                       [{"type": "text", "text": "the typed question"}]),
+            "the typed question")
+
+    def test_an_interruption_marker_is_not_a_prompt(self):
+        self.assertEqual(
+            self._snip([{"type": "text", "text": "[Request interrupted by user]"}],
+                       [{"type": "text", "text": "the typed question"}]),
+            "the typed question")
+
+    def test_a_prompt_that_opens_with_a_pasted_image_is_kept(self):
+        """The reason the machine markers are matched by exact prefix rather
+        than "starts with a bracket": this is a real question."""
+        self.assertEqual(
+            self._snip([{"type": "text",
+                         "text": "[Image #4] So these are the fields used"}]),
+            "[Image #4] So these are the fields used")
+
+    def test_machine_written_user_turns_are_not_mistaken_for_prompts(self):
+        """Claude injects caveats, slash-command expansions and command output
+        as `user` messages. A picker row labelled "<local-command-caveat>"
+        identifies nothing, so keep looking for something a person wrote."""
+        tmp = tempfile.mkdtemp(prefix="snip-")
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        p = os.path.join(tmp, "s.jsonl")
+        with open(p, "w") as f:
+            for content in ("<local-command-caveat>Caveat: the messages below",
+                            "Caveat: The messages below were generated by",
+                            "<command-name>/clear</command-name>",
+                            "the actual question someone typed"):
+                f.write(jsonl({"type": "user",
+                               "message": {"role": "user", "content": content}}))
+        self.assertEqual(cm.session_snippet(p),
+                         "the actual question someone typed")
+
+    def test_a_session_with_nothing_readable_still_gets_a_row(self):
+        """It is the id that gets acted on, not the snippet."""
+        tmp = tempfile.mkdtemp(prefix="snip-")
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        p = os.path.join(tmp, "s.jsonl")
+        with open(p, "w") as f:
+            f.write("not json at all\n")
+        self.assertEqual(cm.session_snippet(p), "(no prompt recorded)")
+        self.assertEqual(cm.session_snippet(os.path.join(tmp, "gone.jsonl")),
+                         "(no prompt recorded)")
+
+
+# ── the session source seam: ccfind, the walk, and their agreement ──────────
+
+class SessionFixture(FixtureCase):
+    """A parent dir holding sessions, one of which spawned a subproject."""
+
+    HERO = "aaaaaaaa-1111-1111-1111-111111111111"   # born in code, cd'd in
+    SIBLING = "bbbbbbbb-2222-2222-2222-222222222222"  # must stay behind
+    OTHER = "cccccccc-3333-3333-3333-333333333333"    # a third, also staying
+
+    def setUp(self):
+        super().setUp()
+        self.proj = self.make_folder("newproj")
+        self.make_session(self.code, self.HERO, prompt="build me a thing",
+                          later_cwd=self.proj, sidecar=True, mtime=3000)
+        self.make_session(self.code, self.SIBLING, prompt="unrelated work",
+                          mtime=2000)
+        self.make_session(self.code, self.OTHER, prompt="also unrelated",
+                          mtime=1000)
+        self.add_config(self.code)
+        self.add_history(self.code, "build me a thing", session=self.HERO)
+        self.add_history(self.code, "and now here", session=self.HERO)
+        self.add_history(self.code, "unrelated work", session=self.SIBLING)
+        self.write_fixture()
+
+
+CCFIND_STUB = r'''#!/usr/bin/env python3
+"""Stand-in for ccfind: answers --json -x -d <dir> from a canned document.
+
+The document is read from $STUB_DOC, so each test can pose the shape it
+cares about (a wrong scope, a foreign profile, a truncated answer) without
+needing a ccfind that could be talked into producing it.
+"""
+import json, os, sys
+if "--json" not in sys.argv:
+    sys.exit(2)
+sys.stdout.write(open(os.environ["STUB_DOC"]).read())
+'''
+
+
+class TestSessionSources(FixtureCase):
+    """claude-mv accepts ccfind's answer only when it answered OUR question.
+
+    A soft dependency that silently returns a different set depending on what
+    is installed is worse than no dependency, so every way ccfind can be
+    unusable has to land on the filesystem walk rather than on a wrong list.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.stub = os.path.join(self.tmp, "ccfind-stub")
+        with open(self.stub, "w") as f:
+            f.write(CCFIND_STUB)
+        os.chmod(self.stub, 0o755)
+        self.doc = os.path.join(self.tmp, "doc.json")
+        self.sid = "aaaaaaaa-1111-1111-1111-111111111111"
+        self.path = self.make_session(self.code, self.sid, mtime=3000)
+
+    def answer(self, **over):
+        doc = {"version": 1, "query": "", "scope": self.code,
+               "scope_exact": True, "total": 1, "shown": 1, "truncated": False,
+               "results": [{"epoch": 3000, "host": "local", "profile": "p",
+                            "config_dir": self.profile, "id": self.sid,
+                            "cwd": self.code, "mtime": "2026-01-01 00:00:00",
+                            "snippet": "from ccfind", "path": self.path}]}
+        doc.update(over)
+        with open(self.doc, "w") as f:
+            json.dump(doc, f)
+        return {"CLAUDE_MV_CCFIND_BIN": self.stub, "STUB_DOC": self.doc,
+                "CLAUDE_MV_SOURCE": "auto"}
+
+    def rows(self, env):
+        """The candidate ids claude-mv ends up with, read off a dry run."""
+        r = self.run_mv("--extract", "--no-browse", "-n", "--session", self.sid,
+                        self.code, self.proj_path(), env_extra=env,
+                        expect=0)
+        return r
+
+    def proj_path(self):
+        p = os.path.join(self.code, "newproj")
+        os.makedirs(p, exist_ok=True)
+        return p
+
+    def test_a_usable_answer_is_used(self):
+        r = self.rows(self.answer())
+        self.assertIn("would re-home", r.stdout)
+
+    def test_an_answer_about_a_different_question_is_refused(self):
+        """scope_exact is the compatibility handshake. A ccfind that took -x
+        and ignored it would answer about the whole SUBTREE — for ~/code that
+        is every sub-repo's sessions, offered up as if they lived here."""
+        env = self.answer(scope_exact=False)
+        env["CLAUDE_MV_SOURCE"] = "ccfind"
+        r = self.run_mv("--extract", "--no-browse", "-n", "--session", self.sid,
+                        self.code, self.proj_path(), env_extra=env, expect=1)
+        self.assertIn("could not answer", r.stderr)
+
+    def test_a_missing_handshake_is_refused_too(self):
+        """A ccfind predating -x that somehow emits JSON has no such field."""
+        env = self.answer()
+        doc = json.load(open(self.doc))
+        del doc["scope_exact"]
+        with open(self.doc, "w") as f:
+            json.dump(doc, f)
+        env["CLAUDE_MV_SOURCE"] = "ccfind"
+        r = self.run_mv("--extract", "--no-browse", "-n", "--session", self.sid,
+                        self.code, self.proj_path(), env_extra=env, expect=1)
+        self.assertIn("could not answer", r.stderr)
+
+    def test_a_hit_in_a_profile_we_were_not_given_is_dropped(self):
+        """ccfind resolves profiles independently of us, so it can see config
+        dirs this run was never told about. Migrating into one would write to
+        a profile the user did not ask claude-mv to touch."""
+        env = self.answer(results=[{"config_dir": os.path.join(self.tmp, "other"),
+                                    "id": self.sid, "cwd": self.code,
+                                    "path": self.path, "snippet": "x"}])
+        env["CLAUDE_MV_SOURCE"] = "ccfind"
+        r = self.run_mv("--extract", "--no-browse", "-n", "--session", self.sid,
+                        self.code, self.proj_path(), env_extra=env, expect=1)
+        self.assertIn("no sessions are homed in", r.stderr)
+
+    def test_a_hit_whose_cwd_is_not_ours_is_dropped(self):
+        """enc() is lossy: /a/b/c and /a/b-c share a project dir, and Claude
+        files both there. The recorded cwd is what tells them apart."""
+        env = self.answer(results=[{"config_dir": self.profile, "id": self.sid,
+                                    "cwd": self.code + "-scratch",
+                                    "path": self.path, "snippet": "x"}])
+        env["CLAUDE_MV_SOURCE"] = "ccfind"
+        r = self.run_mv("--extract", "--no-browse", "-n", "--session", self.sid,
+                        self.code, self.proj_path(), env_extra=env, expect=1)
+        self.assertIn("no sessions are homed in", r.stderr)
+
+    def test_a_hit_with_no_cwd_is_confirmed_rather_than_dropped(self):
+        """ccfind prints "?" when it could not extract a cwd. That is "don't
+        know", not "not ours" — dropping the session on its silence would
+        hide it, so we read the file ourselves instead."""
+        env = self.answer(results=[{"config_dir": self.profile, "id": self.sid,
+                                    "cwd": "?", "path": self.path,
+                                    "snippet": "x"}])
+        env["CLAUDE_MV_SOURCE"] = "ccfind"
+        r = self.run_mv("--extract", "--no-browse", "-n", "--session",
+                        self.sid, self.code, self.proj_path(), env_extra=env)
+        self.assertIn("would re-home", r.stdout)
+
+    def test_a_hit_with_no_cwd_whose_file_disagrees_is_still_dropped(self):
+        """The confirmation has to be a real check, not a rubber stamp."""
+        stray = self.make_session(self.code + "-scratch", self.sid)
+        env = self.answer(results=[{"config_dir": self.profile, "id": self.sid,
+                                    "cwd": "?", "path": stray,
+                                    "snippet": "x"}])
+        env["CLAUDE_MV_SOURCE"] = "ccfind"
+        r = self.run_mv("--extract", "--no-browse", "-n", "--session",
+                        self.sid, self.code, self.proj_path(),
+                        env_extra=env, expect=1)
+        self.assertIn("no sessions are homed in", r.stderr)
+
+    def test_a_hit_we_cannot_stat_is_not_offered(self):
+        env = self.answer(results=[{"config_dir": self.profile, "id": self.sid,
+                                    "cwd": self.code, "snippet": "x",
+                                    "path": os.path.join(self.tmp, "gone.jsonl")}])
+        env["CLAUDE_MV_SOURCE"] = "ccfind"
+        r = self.run_mv("--extract", "--no-browse", "-n", "--session",
+                        self.sid, self.code, self.proj_path(),
+                        env_extra=env, expect=1)
+        self.assertIn("no sessions are homed in", r.stderr)
+
+    def test_a_malformed_hit_is_skipped_not_crashed_on(self):
+        env = self.answer(results=[{"config_dir": self.profile},
+                                   {"id": self.sid, "cwd": self.code,
+                                    "config_dir": self.profile,
+                                    "path": self.path, "snippet": "x"}])
+        env["CLAUDE_MV_SOURCE"] = "ccfind"
+        r = self.run_mv("--extract", "--no-browse", "-n", "--session",
+                        self.sid, self.code, self.proj_path(), env_extra=env)
+        self.assertIn("would re-home", r.stdout)
+
+    def test_a_clipped_answer_says_so(self):
+        """No silent caps: a picker showing 50 of 200 sessions must not look
+        like the whole list."""
+        env = self.answer(truncated=True, total=200, shown=1)
+        r = self.run_mv("--extract", "--no-browse", "-n", "--session", self.sid,
+                        self.code, self.proj_path(), env_extra=env)
+        self.assertIn("--limit", r.stderr)
+
+    def test_a_broken_ccfind_falls_through_to_the_walk(self):
+        broken = os.path.join(self.tmp, "broken")
+        with open(broken, "w") as f:
+            f.write("#!/bin/sh\necho nope >&2\nexit 3\n")
+        os.chmod(broken, 0o755)
+        r = self.run_mv("--extract", "--no-browse", "-n", "--session", self.sid, self.code,
+                        self.proj_path(),
+                        env_extra={"CLAUDE_MV_CCFIND_BIN": broken,
+                                   "CLAUDE_MV_SOURCE": "auto"})
+        self.assertIn("would re-home", r.stdout)
+
+    def test_no_ccfind_at_all_falls_through_to_the_walk(self):
+        r = self.run_mv("--extract", "--no-browse", "-n", "--session", self.sid, self.code,
+                        self.proj_path(), env_extra={"CLAUDE_MV_SOURCE": "fs"})
+        self.assertIn("would re-home", r.stdout)
+
+    def test_the_walk_confirms_a_session_belongs_to_this_path(self):
+        """enc() is lossy, so one project dir can legitimately hold sessions
+        of two different real paths — `<tmp>/code` and `<tmp>-code` both
+        encode to the same name, and Claude files both there. Offering a
+        stranger's conversation would re-home history that was never ours.
+
+        Constructed rather than imagined: the assertion below proves the
+        sibling really does land in the same directory on disk.
+        """
+        stranger = self.tmp + "-code"          # encodes exactly like self.code
+        self.assertEqual(cm.enc(stranger), cm.enc(self.code))
+        other = "ffffffff-9999-9999-9999-999999999999"
+        self.make_session(stranger, other)
+        self.assertTrue(os.path.isfile(os.path.join(
+            self.projects, cm.enc(self.code), f"{other}.jsonl")),
+            "fixture did not reproduce the collision")
+
+        r = self.run_mv("--extract", "--no-browse", "-n", "--session", other,
+                        self.code, self.proj_path(),
+                        env_extra={"CLAUDE_MV_SOURCE": "fs"}, expect=1)
+        self.assertIn("not homed in", r.stderr)
+
+
+CCFIND_ZSH = os.environ.get("CLAUDE_MV_CCFIND_SCRIPT") or os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "ccfind", "ccfind.zsh")
+
+
+@unittest.skipUnless(shutil.which("zsh") and os.path.isfile(CCFIND_ZSH),
+                     "no sibling ccfind checkout to cross-check against")
+class TestSessionSourcesAgree(SessionFixture):
+    """The two sources must return the SAME sessions for the same fixture.
+
+    The one test that keeps a soft dependency honest. Everything else pins
+    each source's own behaviour; if they disagree about which sessions are
+    homed in a path, claude-mv quietly does something different depending on
+    what the machine has installed — and no per-source test can see it.
+
+    Uses the real ccfind (pointed at the fixture profile via CCFIND_PROFILES),
+    not a stub, because a stub agreeing with us proves nothing. Skips where
+    there is no ccfind checkout, CI included — so this is a local guard, and
+    the suite says so rather than implying the agreement is verified
+    everywhere.
+    """
+
+    def ids_from(self, source):
+        r = self.run_mv("--extract", "--no-browse", "-n", "--session", self.HERO,
+                        "--session", self.SIBLING, "--session", self.OTHER,
+                        self.code, self.proj,
+                        env_extra={"CLAUDE_MV_SOURCE": source,
+                                   "CLAUDE_MV_CCFIND_SOURCE": CCFIND_ZSH,
+                                   "CCFIND_PROFILES": f"test:{self.profile}"})
+        return sorted(re.findall(r"re-home ([0-9a-f]{8})", r.stdout))
+
+    def test_ccfind_and_the_filesystem_walk_see_the_same_sessions(self):
+        self.assertEqual(self.ids_from("ccfind"), self.ids_from("fs"))
+        self.assertEqual(len(self.ids_from("fs")), 3)
+
+    def test_a_session_that_wandered_is_still_found_by_both(self):
+        """The hero case. It STARTED in code and spent the rest of its life
+        in the subproject, so anything keying on a session's latest cwd would
+        lose the one session this whole mode exists to move."""
+        for source in ("ccfind", "fs"):
+            r = self.run_mv("--extract", "--no-browse", "-n", "--session", self.HERO,
+                            self.code, self.proj,
+                            env_extra={"CLAUDE_MV_SOURCE": source,
+                                       "CLAUDE_MV_CCFIND_SOURCE": CCFIND_ZSH,
+                                       "CCFIND_PROFILES": f"test:{self.profile}"})
+            self.assertIn(self.HERO[:8], r.stdout, source)
+
+
+# ── end-to-end: moving sessions, not folders ────────────────────────────────
+
+class TestSessionMove(SessionFixture):
+    def dst_dir(self, cwd):
+        return os.path.join(self.projects, cm.enc(cwd))
+
+    def session_ids_in(self, cwd):
+        d = self.dst_dir(cwd)
+        if not os.path.isdir(d):
+            return []
+        return sorted(n[:-len(".jsonl")] for n in os.listdir(d)
+                      if n.endswith(".jsonl"))
+
+    FS = {"CLAUDE_MV_SOURCE": "fs"}
+
+    def test_only_the_chosen_session_moves(self):
+        self.run_mv("--extract", "--no-browse", "--session", self.HERO, self.code,
+                    self.proj, env_extra=self.FS)
+
+        self.assertEqual(self.session_ids_in(self.proj), [self.HERO])
+        self.assertEqual(self.session_ids_in(self.code),
+                         sorted([self.SIBLING, self.OTHER]))
+
+    def test_the_sidecar_follows_its_session(self):
+        """subagents/ and tool-results/ live INSIDE the project dir, so the
+        whole-folder path carries them for free and this one must not forget."""
+        self.run_mv("--extract", "--no-browse", "--session", self.HERO, self.code,
+                    self.proj, env_extra=self.FS)
+
+        self.assertTrue(os.path.isfile(os.path.join(
+            self.dst_dir(self.proj), self.HERO, "subagents", "agent-1.jsonl")))
+        self.assertFalse(os.path.exists(os.path.join(
+            self.dst_dir(self.code), self.HERO)))
+
+    def test_the_transcript_is_not_rewritten(self):
+        """Nothing moved on disk — the session really did start in the parent
+        — so rewriting cwd would falsify the record. It would also corrupt
+        this shape outright: the second turn already names the destination,
+        and a prefix remap would take it to newproj/newproj."""
+        before = open(os.path.join(self.dst_dir(self.code),
+                                   f"{self.HERO}.jsonl")).read()
+        self.run_mv("--extract", "--no-browse", "--session", self.HERO, self.code,
+                    self.proj, env_extra=self.FS)
+        after = open(os.path.join(self.dst_dir(self.proj),
+                                  f"{self.HERO}.jsonl")).read()
+        self.assertEqual(after, before)
+        self.assertIn(json.dumps(self.proj)[1:-1], after)   # …/newproj
+        self.assertNotIn("newproj/newproj", after)
+
+    def test_only_that_session_s_history_is_re_keyed(self):
+        self.run_mv("--extract", "--no-browse", "--session", self.HERO, self.code,
+                    self.proj, env_extra=self.FS)
+
+        by_session = {}
+        for e in self.read_history():
+            by_session.setdefault(e["sessionId"], set()).add(e["project"])
+        self.assertEqual(by_session[self.HERO], {self.proj})
+        self.assertEqual(by_session[self.SIBLING], {self.code})
+
+    def test_the_config_map_is_left_alone(self):
+        """The source project still exists, and fabricating a destination
+        entry would transplant its trust flag and allowedTools onto a path
+        the user never approved."""
+        before = self.read_config()
+        r = self.run_mv("--extract", "--no-browse", "--session", self.HERO, self.code,
+                        self.proj, env_extra=self.FS)
+        self.assertEqual(self.read_config(), before)
+        self.assertIn("no config entry for the destination yet", r.stdout)
+
+    def test_no_folder_is_moved(self):
+        self.run_mv("--extract", "--no-browse", "--session", self.HERO, self.code,
+                    self.proj, env_extra=self.FS)
+        self.assertTrue(os.path.isdir(self.proj))
+        self.assertTrue(os.path.isdir(self.code))
+
+    def test_the_destination_may_be_inside_the_source(self):
+        """The folder path refuses this outright ("cannot move into itself"),
+        and for a folder move it is nonsense. Here it is the norm: the
+        subproject was created inside the directory the session started in."""
+        r = self.run_mv("--extract", "--no-browse", "--session", self.HERO, self.code,
+                        self.proj, env_extra=self.FS)
+        self.assertNotIn("into itself", r.stdout + r.stderr)
+
+    def test_an_eight_character_prefix_names_a_session(self):
+        self.run_mv("--extract", "--no-browse", "--session", self.HERO[:8], self.code,
+                    self.proj, env_extra=self.FS)
+        self.assertEqual(self.session_ids_in(self.proj), [self.HERO])
+
+    def test_an_ambiguous_prefix_is_refused_rather_than_guessed(self):
+        """Two ids sharing a prefix is unlikely and entirely possible, and
+        guessing would re-home the wrong conversation."""
+        twin = self.HERO[:8] + "-9999-9999-9999-999999999999"
+        self.make_session(self.code, twin, mtime=500)
+        r = self.run_mv("--extract", "--no-browse", "--session", self.HERO[:8], self.code,
+                        self.proj, env_extra=self.FS, expect=1)
+        self.assertIn("matches 2 sessions", r.stderr)
+        self.assertEqual(self.session_ids_in(self.proj), [])
+
+    def test_naming_a_session_ignores_the_picker_limit(self):
+        """--limit keeps the picker readable; it must not decide whether a
+        session named outright can be found."""
+        self.run_mv("--extract", "--no-browse", "--limit", "1", "--session", self.OTHER,
+                    self.code, self.proj, env_extra=self.FS)
+        self.assertEqual(self.session_ids_in(self.proj), [self.OTHER])
+
+    def test_an_unknown_session_is_refused_before_anything_moves(self):
+        r = self.run_mv("--extract", "--no-browse", "--session", "deadbeef", self.code,
+                        self.proj, env_extra=self.FS, expect=1)
+        self.assertIn("not homed in", r.stderr)
+        self.assertEqual(self.session_ids_in(self.proj), [])
+
+    def test_dry_run_changes_nothing(self):
+        before = self.session_ids_in(self.code)
+        r = self.run_mv("--extract", "--no-browse", "-n", "--session", self.HERO, self.code,
+                        self.proj, env_extra=self.FS)
+        self.assertIn("dry run", r.stdout)
+        self.assertEqual(self.session_ids_in(self.code), before)
+        self.assertEqual(self.session_ids_in(self.proj), [])
+        self.assertEqual(self.restore_stamps(), [])
+
+    def test_a_live_session_among_the_chosen_blocks(self):
+        """Sharper than the folder guard's cwd test: the folder is not moving,
+        so what matters is whether this session's transcript is being appended
+        to while we relocate it."""
+        d = os.path.join(self.profile, "sessions")
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, "1.json"), "w") as f:
+            json.dump({"cwd": self.proj, "pid": os.getpid(),
+                       "sessionId": self.HERO}, f)
+        r = self.run_mv("--extract", "--no-browse", "--session", self.HERO, self.code,
+                        self.proj, env_extra=self.FS, expect=1)
+        self.assertIn("live Claude session", r.stderr)
+        self.assertEqual(self.session_ids_in(self.proj), [])
+
+    def test_a_live_session_we_are_not_moving_does_not_block(self):
+        d = os.path.join(self.profile, "sessions")
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, "1.json"), "w") as f:
+            json.dump({"cwd": self.code, "pid": os.getpid(),
+                       "sessionId": self.SIBLING}, f)
+        self.run_mv("--extract", "--no-browse", "--session", self.HERO, self.code,
+                    self.proj, env_extra=self.FS)
+        self.assertEqual(self.session_ids_in(self.proj), [self.HERO])
+
+    def test_a_session_already_at_the_destination_is_kept_by_default(self):
+        self.make_session(self.proj, self.HERO, prompt="the newer copy")
+        r = self.run_mv("--extract", "--no-browse", "--session", self.HERO, self.code,
+                        self.proj, env_extra=self.FS)
+        self.assertIn("skip", r.stdout)
+        with open(os.path.join(self.dst_dir(self.proj),
+                               f"{self.HERO}.jsonl")) as f:
+            self.assertIn("the newer copy", f.read())
+        # left where it was rather than silently dropped
+        self.assertIn(self.HERO, self.session_ids_in(self.code))
+
+    def test_a_skipped_session_keeps_its_history_where_it_is(self):
+        """The transcript stayed in the source, so its prompt entries must
+        too — re-keying them would point the recall at a folder holding a
+        different copy of that conversation."""
+        self.make_session(self.proj, self.HERO, prompt="the newer copy")
+        r = self.run_mv("--extract", "--no-browse", "--session", self.HERO,
+                        self.code, self.proj, env_extra=self.FS)
+        self.assertIn("skip", r.stdout)
+        projects = {e["project"] for e in self.read_history()
+                    if e["sessionId"] == self.HERO}
+        self.assertEqual(projects, {self.code})
+
+    def test_overwrite_replaces_it_and_keeps_the_restore_point(self):
+        self.make_session(self.proj, self.HERO, prompt="the newer copy")
+        self.run_mv("--extract", "--no-browse", "--on-conflict", "overwrite", "--session",
+                    self.HERO, self.code, self.proj, env_extra=self.FS)
+        with open(os.path.join(self.dst_dir(self.proj),
+                               f"{self.HERO}.jsonl")) as f:
+            self.assertIn("build me a thing", f.read())
+        self.assertEqual(len(self.restore_stamps()), 1)
+
+    def test_overwrite_discards_the_destination_sidecar_too(self):
+        """A replaced session's subagent transcripts must go with it — leaving
+        them behind would attach one conversation's subagents to another."""
+        self.make_session(self.proj, self.HERO, prompt="the newer copy",
+                          sidecar=True)
+        victim = os.path.join(self.dst_dir(self.proj), self.HERO,
+                              "subagents", "agent-1.jsonl")
+        with open(victim, "w") as f:
+            f.write(jsonl({"type": "user", "note": "destination's own"}))
+
+        self.run_mv("--extract", "--no-browse", "--on-conflict", "overwrite",
+                    "--session", self.HERO, self.code, self.proj,
+                    env_extra=self.FS)
+
+        with open(victim) as f:                       # replaced, not merged
+            self.assertNotIn("destination's own", f.read())
+        stamps = self.restore_stamps()                # and kept, not lost
+        self.assertEqual(len(stamps), 1)
+        saved = subprocess.run(["grep", "-rl", "destination's own",
+                                os.path.join(self.restore_root, stamps[0])],
+                               capture_output=True, text=True)
+        self.assertTrue(saved.stdout.strip(),
+                        "the discarded sidecar is not in the restore point")
+
+    def test_a_stale_live_session_record_does_not_block(self):
+        """sessions/*.json outlives the process it describes. Trusting the
+        file alone would make a crashed session block its own move forever."""
+        d = os.path.join(self.profile, "sessions")
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, "1.json"), "w") as f:
+            json.dump({"cwd": self.code, "pid": 2 ** 22,   # long gone
+                       "sessionId": self.HERO}, f)
+        with open(os.path.join(d, "notes.txt"), "w") as f:
+            f.write("not a session record")
+        with open(os.path.join(d, "2.json"), "w") as f:
+            f.write("{ truncated")
+        self.run_mv("--extract", "--no-browse", "--session", self.HERO,
+                    self.code, self.proj, env_extra=self.FS)
+        self.assertEqual(self.session_ids_in(self.proj), [self.HERO])
+
+    def test_force_overrides_a_live_session(self):
+        d = os.path.join(self.profile, "sessions")
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, "1.json"), "w") as f:
+            json.dump({"cwd": self.proj, "pid": os.getpid(),
+                       "sessionId": self.HERO}, f)
+        self.run_mv("--extract", "--no-browse", "--force", "--session",
+                    self.HERO, self.code, self.proj, env_extra=self.FS)
+        self.assertEqual(self.session_ids_in(self.proj), [self.HERO])
+
+    def test_a_stray_destination_sidecar_is_a_conflict_not_a_half_move(self):
+        """The destination has a `<id>/` with no transcript beside it — an
+        interrupted run, a half-deleted session. Calling that a clean move
+        would land the transcript and *then* fail on the sidecar rename,
+        stopping halfway; it would also hand one conversation another's
+        subagent transcripts. So it is detected up front, like every other
+        conflict, and the default policy leaves both sides alone.
+        """
+        stray = os.path.join(self.dst_dir(self.proj), self.HERO, "subagents")
+        os.makedirs(stray)
+        with open(os.path.join(stray, "agent-9.jsonl"), "w") as f:
+            f.write(jsonl({"type": "user", "note": "not ours"}))
+
+        r = self.run_mv("--extract", "--no-browse", "--session", self.HERO,
+                        self.code, self.proj, env_extra=self.FS)
+
+        # Reported UP FRONT, from the plan — not discovered part-way through
+        # by the code doing the moving. That ordering is the whole promise.
+        self.assertIn("already present at the destination", r.stdout)
+        self.assertLess(r.stdout.index("already present at the destination"),
+                        r.stdout.index("re-homing"))
+        self.assertIn("skip", r.stdout)
+        self.assertEqual(self.session_ids_in(self.proj), [])   # nothing landed
+        self.assertIn(self.HERO, self.session_ids_in(self.code))
+        with open(os.path.join(stray, "agent-9.jsonl")) as f:
+            self.assertIn("not ours", f.read())
+
+    def test_overwrite_clears_a_stray_destination_sidecar_first(self):
+        stray = os.path.join(self.dst_dir(self.proj), self.HERO, "subagents")
+        os.makedirs(stray)
+        with open(os.path.join(stray, "agent-9.jsonl"), "w") as f:
+            f.write(jsonl({"type": "user", "note": "not ours"}))
+
+        self.run_mv("--extract", "--no-browse", "--on-conflict", "overwrite",
+                    "--session", self.HERO, self.code, self.proj,
+                    env_extra=self.FS)
+
+        self.assertEqual(self.session_ids_in(self.proj), [self.HERO])
+        self.assertFalse(os.path.exists(os.path.join(stray, "agent-9.jsonl")),
+                         "the moved session inherited a stranger's subagents")
+        self.assertTrue(os.path.isfile(os.path.join(
+            self.dst_dir(self.proj), self.HERO, "subagents", "agent-1.jsonl")),
+            "the session's own sidecar did not follow")
+
+    def test_a_failure_midway_keeps_the_restore_point_and_exits_3(self):
+        """The contract the error message makes: there is something to roll
+        back to, and it is named."""
+        target = self.dst_dir(self.proj)
+        os.makedirs(target)
+        # A file where the sidecar dir has to land: the transcript moves, then
+        # the sidecar rename fails — a genuine mid-migration stop.
+        with open(os.path.join(target, self.HERO), "w") as f:
+            f.write("in the way")
+        r = self.run_mv("--extract", "--no-browse", "--session", self.HERO,
+                        self.code, self.proj, env_extra=self.FS, expect=3)
+        self.assertIn("migration failed midway", r.stderr)
+        stamps = self.restore_stamps()
+        self.assertEqual(len(stamps), 1)
+        self.assertIn(stamps[0], r.stderr)
+
+    def test_overwrite_backup_can_be_opted_out_of(self):
+        self.make_session(self.proj, self.HERO, prompt="the newer copy")
+        env = dict(self.FS, CLAUDE_MV_OVERWRITE_BACKUP="0")
+        self.run_mv("--extract", "--no-browse", "--on-conflict", "overwrite",
+                    "--session", self.HERO, self.code, self.proj,
+                    env_extra=env)
+        self.assertEqual(self.restore_stamps(), [])
+
+    def test_a_destination_that_already_has_a_config_entry_is_not_remarked_on(self):
+        self.add_config(self.proj)
+        self.write_fixture()
+        r = self.run_mv("--extract", "--no-browse", "--session", self.HERO,
+                        self.code, self.proj, env_extra=self.FS)
+        self.assertNotIn("no config entry", r.stdout)
+
+    def test_a_folder_conflict_policy_is_refused(self):
+        r = self.run_mv("--extract", "--no-browse", "--on-conflict", "consolidate",
+                        "--session", self.HERO, self.code, self.proj,
+                        env_extra=self.FS, expect=2)
+        self.assertIn("does not apply to --extract", r.stderr)
+
+    def test_session_and_already_moved_are_different_operations(self):
+        r = self.run_mv("--extract", "--no-browse", "--already-moved", "--session",
+                        self.HERO, self.code, self.proj, env_extra=self.FS,
+                        expect=2)
+        self.assertIn("different operations", r.stderr)
+
+    def test_selecting_sessions_needs_the_mode(self):
+        r = self.run_mv("--session", self.HERO, self.code, self.proj,
+                        env_extra=self.FS, expect=2)
+        self.assertIn("needs --extract", r.stderr)
+
+    def test_no_browse_only_means_anything_in_extract_mode(self):
+        r = self.run_mv("--no-browse", self.code, self.proj,
+                        env_extra=self.FS, expect=2)
+        self.assertIn("only applies to --extract", r.stderr)
+
+    def test_a_destination_that_is_not_there_is_refused(self):
+        r = self.run_mv("--extract", "--no-browse", "--session", self.HERO, self.code,
+                        os.path.join(self.code, "nope"), env_extra=self.FS,
+                        expect=1)
+        self.assertIn("not a directory", r.stderr)
+
+    def test_a_source_with_no_sessions_says_where_to_look(self):
+        empty = self.make_folder("empty")
+        r = self.run_mv("--extract", "--no-browse", "--session", self.HERO, empty,
+                        self.proj, env_extra=self.FS, expect=1)
+        self.assertIn("homed where it STARTED", r.stderr)
+
+    def test_restore_puts_the_session_back_and_moves_no_folder(self):
+        # A conflict resolved by overwrite: the one mode that keeps its
+        # restore point on success, and so the only one with a point left to
+        # roll back to.
+        self.make_session(self.proj, self.HERO, prompt="the newer copy")
+        before = {"code": self.session_ids_in(self.code),
+                  "proj": self.session_ids_in(self.proj),
+                  "history": self.read_history(),
+                  "config": self.read_config()}
+        self.run_mv("--extract", "--no-browse", "--on-conflict", "overwrite", "--session",
+                    self.HERO, self.code, self.proj, env_extra=self.FS)
+        stamps = self.restore_stamps()
+        self.assertEqual(len(stamps), 1)
+
+        r = self.run_mv("--restore", stamps[0], "--force")
+
+        self.assertIn("no folder was moved", r.stdout)
+        self.assertEqual(self.session_ids_in(self.code), before["code"])
+        self.assertEqual(self.session_ids_in(self.proj), before["proj"])
+        self.assertEqual(self.read_history(), before["history"])
+        self.assertEqual(self.read_config(), before["config"])
+        # and the sidecar came home rather than existing in both places
+        self.assertTrue(os.path.isdir(os.path.join(
+            self.dst_dir(self.code), self.HERO)))
+        self.assertFalse(os.path.exists(os.path.join(
+            self.dst_dir(self.proj), self.HERO)))
+        self.assertEqual(self.restore_stamps(), [])
+
+
+class TestSessionPicker(SessionFixture):
+    """Choosing without --session. fzf is soft, so the numbered prompt is not
+    a consolation prize — it is the path a pipe can drive, and so the one the
+    suite can assert on."""
+
+    PLAIN = {"CLAUDE_MV_SOURCE": "fs", "CLAUDE_MV_PICKER": "plain",
+             "CLAUDE_MV_FORCE_PROMPT": "1"}
+
+    def test_the_list_is_newest_first(self):
+        """Stable order is what lets a person — and every test below — say
+        "the second one" and mean it."""
+        r = self.run_mv("--extract", "--no-browse", "-n", self.code, self.proj, stdin="\n",
+                        env_extra=self.PLAIN, expect=1)
+        order = re.findall(r"^\s+\d+\s+\S+ \S+\s+([0-9a-f]{8})\s", r.stdout,
+                           re.M)
+        self.assertEqual(order[:3], [self.HERO[:8], self.SIBLING[:8],
+                                     self.OTHER[:8]])
+
+    def test_a_number_picks_that_session(self):
+        self.run_mv("--extract", "--no-browse", self.code, self.proj, stdin="1\n",
+                    env_extra=self.PLAIN)
+        self.assertEqual(sorted(n[:-6] for n in os.listdir(
+            os.path.join(self.projects, cm.enc(self.proj)))
+            if n.endswith(".jsonl")), [self.HERO])
+
+    def test_several_can_be_picked_at_once(self):
+        self.run_mv("--extract", "--no-browse", self.code, self.proj, stdin="1,3\n",
+                    env_extra=self.PLAIN)
+        moved = sorted(n[:-6] for n in os.listdir(
+            os.path.join(self.projects, cm.enc(self.proj)))
+            if n.endswith(".jsonl"))
+        self.assertEqual(moved, sorted([self.HERO, self.OTHER]))
+
+    def test_an_empty_answer_cancels(self):
+        r = self.run_mv("--extract", "--no-browse", self.code, self.proj, stdin="\n",
+                        env_extra=self.PLAIN, expect=1)
+        self.assertIn("nothing selected", r.stdout)
+        self.assertFalse(os.path.exists(
+            os.path.join(self.projects, cm.enc(self.proj))))
+
+    def test_it_reprompts_rather_than_guessing(self):
+        self.run_mv("--extract", "--no-browse", self.code, self.proj, stdin="9\n1\n",
+                    env_extra=self.PLAIN)
+        self.assertTrue(os.path.exists(os.path.join(
+            self.projects, cm.enc(self.proj), f"{self.HERO}.jsonl")))
+
+    def test_with_no_fzf_and_no_tty_it_says_so_rather_than_hanging(self):
+        r = self.run_mv("--extract", "--no-browse", self.code, self.proj,
+                        env_extra={"CLAUDE_MV_SOURCE": "fs",
+                                   "CLAUDE_MV_PICKER": "plain"},
+                        expect=1)
+        self.assertIn("--session", r.stderr)
+
+    def test_fzf_is_not_launched_when_there_is_no_terminal(self):
+        """The regression this guards is a HANG, not a failure: fzf draws a
+        full-screen UI and reads the keyboard, so starting it on a pipe leaves
+        it waiting on input that can never arrive. A test that reproduced it
+        would hang too, so this asserts the negative — fzf was never run —
+        with a stub that records having been called.
+
+        `auto` is the mode that matters here: it is what a script, a cron job
+        or a piped run gets, and it is the one that has to decide for itself.
+        """
+        bin_dir = os.path.join(self.tmp, "trapbin")
+        os.makedirs(bin_dir, exist_ok=True)
+        marker = os.path.join(self.tmp, "fzf-was-launched")
+        with open(os.path.join(bin_dir, "fzf"), "w") as f:
+            f.write("#!/bin/sh\ntouch %s\nexit 1\n" % marker)
+        os.chmod(os.path.join(bin_dir, "fzf"), 0o755)
+
+        self.run_mv("--extract", self.code, self.proj,
+                    env_extra={"CLAUDE_MV_SOURCE": "fs",
+                               "PATH": bin_dir + os.pathsep
+                                       + os.environ["PATH"]},
+                    expect=1)
+        self.assertFalse(os.path.exists(marker),
+                         "fzf was launched with no tty — that hangs")
+
+    def test_a_forced_fzf_that_is_not_installed_is_reported(self):
+        r = self.run_mv("--extract", "--no-browse", self.code, self.proj,
+                        env_extra={"CLAUDE_MV_SOURCE": "fs",
+                                   "CLAUDE_MV_PICKER": "fzf",
+                                   "PATH": os.path.join(self.tmp, "empty-bin")},
+                        expect=1)
+        self.assertIn("fzf", r.stderr)
+
+    def test_a_forced_fzf_is_reported_at_the_folder_prompt_too(self):
+        """Both pickers honour the same override, so both owe the same
+        explanation when it cannot be met."""
+        r = self.run_mv("--extract", "--session", self.HERO, self.proj,
+                        env_extra={"CLAUDE_MV_SOURCE": "fs",
+                                   "CLAUDE_MV_PICKER": "fzf",
+                                   "PATH": os.path.join(self.tmp, "empty-bin")},
+                        cwd=self.code, expect=1)
+        self.assertIn("fzf is not installed", r.stderr)
+
+
+class TestExtractAcrossProfiles(unittest.TestCase):
+    """--extract groups the chosen sessions BY PROFILE and plans each on its
+    own. Every other extract test passes one --profile, so none of them can
+    see a second profile being skipped, or one profile's session being
+    written into another's projects/ tree."""
+
+    def setUp(self):
+        self.tmp = os.path.realpath(tempfile.mkdtemp(prefix="claude-mv-xp-"))
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.code = os.path.join(self.tmp, "code")
+        self.proj = os.path.join(self.code, "newproj")
+        os.makedirs(self.proj)
+        self.restore_root = os.path.join(self.tmp, "restore")
+        self.profiles = []
+        for i, name in enumerate(("work", "personal")):
+            p = os.path.join(self.tmp, name)
+            os.makedirs(os.path.join(p, "projects", cm.enc(self.code)))
+            sid = f"{name[0] * 8}-1111-1111-1111-11111111111{i}"
+            with open(os.path.join(p, "projects", cm.enc(self.code),
+                                   f"{sid}.jsonl"), "w") as f:
+                f.write(jsonl({"type": "user", "cwd": self.code,
+                               "sessionId": sid,
+                               "message": {"role": "user", "content": name}}))
+            with open(os.path.join(p, ".claude.json"), "w") as f:
+                json.dump({"projects": {self.code: {}}}, f)
+            with open(os.path.join(p, "history.jsonl"), "w") as f:
+                f.write(jsonl({"display": name, "project": self.code,
+                               "sessionId": sid}))
+            self.profiles.append((p, sid))
+
+    def run_mv(self, *args, expect=0):
+        env = dict(os.environ, CLAUDE_MV_RESTORE_ROOT=self.restore_root,
+                   CLAUDE_MV_SOURCE="fs")
+        env.pop("CLAUDE_MV_FORCE_PROMPT", None)
+        flags = []
+        for p, _ in self.profiles:
+            flags += ["--profile", p]
+        r = subprocess.run([sys.executable, SCRIPT, *flags, *args],
+                           capture_output=True, text=True, env=env)
+        self.assertEqual(r.returncode, expect,
+                         f"exit {r.returncode}\n{r.stdout}\n{r.stderr}")
+        return r
+
+    def test_a_session_from_each_profile_moves_within_its_own_profile(self):
+        self.run_mv("--extract", "--no-browse",
+                    *[a for _, sid in self.profiles
+                      for a in ("--session", sid)],
+                    self.code, self.proj)
+        for p, sid in self.profiles:
+            moved = os.path.join(p, "projects", cm.enc(self.proj),
+                                 f"{sid}.jsonl")
+            self.assertTrue(os.path.isfile(moved), f"{sid} not in {p}")
+            self.assertFalse(os.path.exists(os.path.join(
+                p, "projects", cm.enc(self.code), f"{sid}.jsonl")))
+            # and its history followed, in ITS profile only
+            with open(os.path.join(p, "history.jsonl")) as f:
+                entries = [json.loads(line) for line in f if line.strip()]
+            self.assertEqual([e["project"] for e in entries], [self.proj])
+
+    def test_moving_one_leaves_the_other_profile_untouched(self):
+        (kept, kept_sid) = self.profiles[1]
+        before = sorted(os.listdir(os.path.join(kept, "projects")))
+        self.run_mv("--extract", "--no-browse", "--session",
+                    self.profiles[0][1], self.code, self.proj)
+        self.assertEqual(sorted(os.listdir(os.path.join(kept, "projects"))),
+                         before)
+        with open(os.path.join(kept, "history.jsonl")) as f:
+            self.assertIn(self.code, f.read())
+
+    def test_the_tally_counts_both_profiles(self):
+        r = self.run_mv("--extract", "--no-browse",
+                        *[a for _, sid in self.profiles
+                          for a in ("--session", sid)],
+                        self.code, self.proj)
+        self.assertIn("2 session files", r.stdout)
+        self.assertIn("2 history entries", r.stdout)
+
+
+class TestExtractPathGrammar(SessionFixture):
+    """Which positional means what, and what is allowed to be inferred.
+
+    The rule the whole grammar rests on: `src` has a default (the cwd) and
+    `dst` never does, so a lone positional can only be the destination.
+    """
+
+    NB = {"CLAUDE_MV_SOURCE": "fs"}
+
+    def moved_to(self, cwd):
+        d = os.path.join(self.projects, cm.enc(cwd))
+        return sorted(n[:-len(".jsonl")] for n in os.listdir(d)
+                      if n.endswith(".jsonl")) if os.path.isdir(d) else []
+
+    def test_two_positionals_are_source_then_destination(self):
+        self.run_mv("--extract", "--no-browse", "--session", self.HERO,
+                    self.code, self.proj, env_extra=self.NB)
+        self.assertEqual(self.moved_to(self.proj), [self.HERO])
+
+    def test_one_positional_is_the_destination_and_src_is_the_cwd(self):
+        """`claude-mv --extract ~/code/newproj`, run from ~/code.
+
+        The lone path is the destination — never the source — and the source
+        prompt comes up already defaulted to the cwd, so a bare Enter takes
+        it. Both halves of the rule in one run.
+        """
+        r = self.run_mv("--extract", "-n", "--session", self.HERO, self.proj,
+                        stdin="\n\n", cwd=self.code,
+                        env_extra={"CLAUDE_MV_SOURCE": "fs",
+                                   "CLAUDE_MV_PICKER": "plain",
+                                   "CLAUDE_MV_FORCE_PROMPT": "1"})
+        # found in the cwd, headed for the positional
+        self.assertIn(f"Enter accepts {self.code}", r.stdout)
+        self.assertIn("would re-home", r.stdout)
+        self.assertIn(cm.enc(self.proj), r.stdout)
+
+    def test_no_browse_will_not_infer_the_destination(self):
+        """The one thing this mode refuses to guess. Without browsing and
+        without a dst there is nothing left to go on, so it stops."""
+        r = self.run_mv("--extract", "--no-browse", "--session", self.HERO,
+                        self.code, env_extra=self.NB, expect=1)
+        self.assertIn("needs both paths", r.stderr)
+        self.assertEqual(self.moved_to(self.proj), [])
+
+    def test_no_browse_will_not_infer_the_source_either(self):
+        r = self.run_mv("--extract", "--no-browse", "--session", self.HERO,
+                        env_extra=self.NB, expect=1)
+        self.assertIn("needs both paths", r.stderr)
+
+    def test_the_folder_move_still_demands_both(self):
+        """--extract fills its own paths in; the folder move must not."""
+        r = self.run_mv(self.code, env_extra=self.NB, expect=2)
+        self.assertIn("src and dst are required", r.stderr)
+
+
+class TestFolderPicker(SessionFixture):
+    """Browsing for the two folders, on the no-fzf path a pipe can drive."""
+
+    PLAIN = {"CLAUDE_MV_SOURCE": "fs", "CLAUDE_MV_PICKER": "plain",
+             "CLAUDE_MV_FORCE_PROMPT": "1"}
+
+    def moved_to(self, cwd):
+        d = os.path.join(self.projects, cm.enc(cwd))
+        return sorted(n[:-len(".jsonl")] for n in os.listdir(d)
+                      if n.endswith(".jsonl")) if os.path.isdir(d) else []
+
+    def test_both_ends_are_asked_for_and_enter_takes_the_default(self):
+        """Run from the source with a destination given: the first prompt
+        defaults to the cwd, the second to the path passed. Two bare Enters
+        accept both."""
+        r = self.run_mv("--extract", "--session", self.HERO, self.proj,
+                        stdin="\n\n", env_extra=self.PLAIN, cwd=self.code)
+        self.assertIn("Which folder holds the sessions?", r.stdout)
+        self.assertIn("Where should they go?", r.stdout)
+        self.assertEqual(self.moved_to(self.proj), [self.HERO])
+
+    def test_a_typed_path_overrides_the_default(self):
+        other = self.make_folder("elsewhere")
+        self.run_mv("--extract", "--session", self.HERO, self.proj,
+                    stdin=f"\n{other}\n", env_extra=self.PLAIN, cwd=self.code)
+        self.assertEqual(self.moved_to(other), [self.HERO])
+        self.assertEqual(self.moved_to(self.proj), [])
+
+    def test_the_destination_is_asked_after_the_sessions(self):
+        """The order the decision is actually made in: you know which
+        conversation you are moving before you know where it belongs."""
+        r = self.run_mv("--extract", self.proj, stdin="\n1\n\n",
+                        env_extra=self.PLAIN, cwd=self.code)
+        self.assertLess(r.stdout.index("sessions available to move"),
+                        r.stdout.index("Where should they go?"))
+
+    def test_a_path_that_is_not_a_directory_reprompts(self):
+        self.run_mv("--extract", "--session", self.HERO, self.proj,
+                    stdin=f"\n{self.code}/nope\n{self.proj}\n",
+                    env_extra=self.PLAIN, cwd=self.code)
+        self.assertEqual(self.moved_to(self.proj), [self.HERO])
+
+    def test_cancelling_the_source_changes_nothing(self):
+        r = self.run_mv("--extract", "--session", self.HERO, self.proj,
+                        stdin="", env_extra=self.PLAIN, cwd=self.code,
+                        expect=1)
+        self.assertIn("cancelled", r.stdout)
+        self.assertEqual(self.moved_to(self.proj), [])
+
+    def test_source_and_destination_may_not_be_the_same(self):
+        r = self.run_mv("--extract", "--session", self.HERO, stdin="\n\n",
+                        env_extra=self.PLAIN, cwd=self.code, expect=1)
+        self.assertIn("same path", r.stderr)
+
+    def test_with_no_tty_and_no_fzf_it_says_how_to_proceed(self):
+        r = self.run_mv("--extract", "--session", self.HERO, self.proj,
+                        env_extra={"CLAUDE_MV_SOURCE": "fs",
+                                   "CLAUDE_MV_PICKER": "plain"},
+                        cwd=self.code, expect=1)
+        self.assertIn("--no-browse", r.stderr)
+
+    def test_cancelling_the_destination_changes_nothing(self):
+        """Distinct from cancelling the source: by here the sessions have been
+        chosen, so there is a half-made decision to throw away."""
+        r = self.run_mv("--extract", "--session", self.HERO, stdin="\n",
+                        env_extra=self.PLAIN, cwd=self.code, expect=1)
+        self.assertIn("cancelled", r.stdout)
+        self.assertEqual(self.moved_to(self.proj), [])
+        self.assertEqual(self.restore_stamps(), [])
+
+    def test_a_destination_argument_that_does_not_exist_falls_back_to_src(self):
+        """The prompt has to start *somewhere*; a path that isn't there can't
+        be it, so the browse opens on the source rather than on nothing."""
+        r = self.run_mv("--extract", "--session", self.HERO,
+                        os.path.join(self.code, "not-created-yet"),
+                        stdin=f"\n{self.proj}\n", env_extra=self.PLAIN,
+                        cwd=self.code)
+        self.assertIn(f"Enter accepts {self.code}", r.stdout.split(
+            "Where should they go?")[1])
+        self.assertEqual(self.moved_to(self.proj), [self.HERO])
+
+    def test_the_path_completer_offers_directories_only(self):
+        """Tab completion is the whole reason the no-fzf prompt is usable, and
+        it is the one piece of the picker a piped test cannot exercise."""
+        os.makedirs(os.path.join(self.code, "newer"), exist_ok=True)
+        with open(os.path.join(self.code, "newfile.txt"), "w") as f:
+            f.write("x")
+        completer = cm.make_dir_completer()
+        hits = []
+        state = 0
+        while True:
+            hit = completer(os.path.join(self.code, "new"), state)
+            if hit is None:
+                break
+            hits.append(hit)
+            state += 1
+        self.assertIn(os.path.join(self.code, "newproj") + os.sep, hits)
+        self.assertIn(os.path.join(self.code, "newer") + os.sep, hits)
+        self.assertNotIn(os.path.join(self.code, "newfile.txt"), hits)
+
+    def test_the_path_completer_expands_a_tilde_and_survives_a_bad_dir(self):
+        completer = cm.make_dir_completer()
+        self.assertIsNone(completer(os.path.join(self.code, "nope", "x"), 0))
+        home = [completer("~/", i) for i in range(1)]
+        self.assertTrue(home[0] is None or home[0].startswith(os.path.expanduser("~")))
+
+    def test_a_directory_row_carries_its_session_count(self):
+        """What turns the browse into a choice rather than a guess: the rows
+        say where the history actually is."""
+        self.assertEqual(cm.session_count([self.profile], self.code), 3)
+        self.assertEqual(cm.session_count([self.profile], self.proj), 0)
+        rows = cm.dir_rows(self.code, [self.profile])
+        self.assertIn("3 sessions", rows[0][1])
+
+    def test_the_navigator_offers_this_dir_the_parent_and_the_children(self):
+        rows = cm.dir_rows(self.code, [self.profile])
+        payloads = [p for p, _ in rows]
+        self.assertEqual(payloads[0], self.code)                  # use this
+        self.assertEqual(payloads[1], os.path.dirname(self.code))  # up
+        self.assertIn(self.proj, payloads)                         # children
+
+    def test_noise_directories_are_not_offered(self):
+        os.makedirs(os.path.join(self.code, ".git", "objects"))
+        os.makedirs(os.path.join(self.code, "node_modules"))
+        payloads = [p for p, _ in cm.dir_rows(self.code, [self.profile])]
+        self.assertNotIn(os.path.join(self.code, ".git"), payloads)
+        self.assertNotIn(os.path.join(self.code, "node_modules"), payloads)
+
+
+@unittest.skipUnless(shutil.which("sh"), "no shell")
+class TestFolderPickerWithFzf(SessionFixture):
+    """The fzf navigator, with a stub for fzf. Under test is the navigation
+    contract — that descending, going up and choosing map to the right
+    directory — not fzf."""
+
+    def setUp(self):
+        super().setUp()
+        self.bin = os.path.join(self.tmp, "fakebin")
+        os.makedirs(self.bin, exist_ok=True)
+        # A stub that walks a script of row-numbers, one per invocation: the
+        # navigator calls fzf once per level, so a single canned answer could
+        # only ever test a one-step browse.
+        self.script = os.path.join(self.tmp, "picks")
+        with open(os.path.join(self.bin, "fzf"), "w") as f:
+            f.write("#!/bin/sh\n"
+                    "n=$(head -1 %s); sed -i.bak 1d %s\n"
+                    "sed -n \"$((n+1))p\"\n" % (self.script, self.script))
+        os.chmod(os.path.join(self.bin, "fzf"), 0o755)
+
+    def picks(self, *rows):
+        with open(self.script, "w") as f:
+            f.write("".join(f"{r}\n" for r in rows))
+        return {"CLAUDE_MV_SOURCE": "fs", "CLAUDE_MV_PICKER": "fzf",
+                "PATH": self.bin + os.pathsep + os.environ["PATH"]}
+
+    def test_choosing_this_directory_ends_the_browse(self):
+        # row 0 is always "use this directory", at both prompts
+        r = self.run_mv("--extract", "--session", self.HERO, self.proj,
+                        env_extra=self.picks(0, 0), cwd=self.code)
+        self.assertIn("done", r.stdout)
+        d = os.path.join(self.projects, cm.enc(self.proj))
+        self.assertTrue(os.path.exists(os.path.join(d, f"{self.HERO}.jsonl")))
+
+    def test_descending_into_a_child_then_choosing_it(self):
+        """src browse: descend into newproj (row 2 — after "use this" and
+        "up"), then choose it. Nothing is homed there, so it stops — which is
+        the proof the navigation actually moved."""
+        r = self.run_mv("--extract", "--session", self.HERO, self.proj,
+                        env_extra=self.picks(2, 0), cwd=self.code, expect=1)
+        self.assertIn("no sessions are homed in", r.stderr)
+        self.assertIn(self.proj, r.stderr)
+
+    def test_escaping_the_browse_cancels(self):
+        with open(os.path.join(self.bin, "fzf"), "w") as f:
+            f.write("#!/bin/sh\nexit 130\n")
+        os.chmod(os.path.join(self.bin, "fzf"), 0o755)
+        r = self.run_mv("--extract", "--session", self.HERO, self.proj,
+                        env_extra={"CLAUDE_MV_SOURCE": "fs",
+                                   "CLAUDE_MV_PICKER": "fzf",
+                                   "PATH": self.bin + os.pathsep
+                                           + os.environ["PATH"]},
+                        cwd=self.code, expect=1)
+        self.assertIn("cancelled", r.stdout)
+
+
+@unittest.skipUnless(shutil.which("sh"), "no shell")
+class TestSessionPickerWithFzf(SessionFixture):
+    """The fzf path, with a stub standing in for fzf itself — the same
+    technique ccfind's own README generator uses. What is under test is the
+    contract with fzf (a marked row comes back and maps to the right
+    session), not fzf."""
+
+    def setUp(self):
+        super().setUp()
+        self.bin = os.path.join(self.tmp, "fakebin")
+        os.makedirs(self.bin, exist_ok=True)
+
+    def write_fzf(self, body):
+        p = os.path.join(self.bin, "fzf")
+        with open(p, "w") as f:
+            f.write(body)
+        os.chmod(p, 0o755)
+
+    def env(self):
+        return {"CLAUDE_MV_SOURCE": "fs", "CLAUDE_MV_PICKER": "fzf",
+                "PATH": self.bin + os.pathsep + os.environ["PATH"]}
+
+    def test_the_marked_row_is_the_session_that_moves(self):
+        # second row of the menu, mapped back by its index column
+        self.write_fzf("#!/bin/sh\nsed -n 2p\n")
+        self.run_mv("--extract", "--no-browse", self.code, self.proj, env_extra=self.env())
+        moved = [n[:-6] for n in os.listdir(
+            os.path.join(self.projects, cm.enc(self.proj)))
+            if n.endswith(".jsonl")]
+        self.assertEqual(moved, [self.SIBLING])   # newest-first row 2
+
+    def test_multiple_marks_move_together(self):
+        self.write_fzf("#!/bin/sh\nsed -n '1p;3p'\n")
+        self.run_mv("--extract", "--no-browse", self.code, self.proj, env_extra=self.env())
+        moved = sorted(n[:-6] for n in os.listdir(
+            os.path.join(self.projects, cm.enc(self.proj)))
+            if n.endswith(".jsonl"))
+        self.assertEqual(moved, sorted([self.HERO, self.OTHER]))
+
+    def test_escaping_the_picker_cancels(self):
+        self.write_fzf("#!/bin/sh\nexit 130\n")
+        r = self.run_mv("--extract", "--no-browse", self.code, self.proj,
+                        env_extra=self.env(), expect=1)
+        self.assertIn("nothing selected", r.stdout)
+        self.assertFalse(os.path.exists(
+            os.path.join(self.projects, cm.enc(self.proj))))
+
+
 # ── wrapper: which profiles the zsh layer decides to pass ───────────────────
 
 ZSH = shutil.which("zsh")
@@ -1237,6 +2809,82 @@ class TestWrapperProfileResolution(unittest.TestCase):
                         "printf 'work\\t~/.claude\\tactive\\n'\n"
                         "printf 'ghost\\t~/.claude-ghost\\t\\n'\n")
         self.assertEqual(self.resolve(stub_on_path=True), [".claude"])
+
+
+@unittest.skipUnless(ZSH, "zsh not installed")
+class TestWrapperCcfindResolution(unittest.TestCase):
+    """claude-mv.zsh decides WHERE ccfind is, and the python cannot.
+
+    ccfind is a zsh function in an interactive shell, so there is usually no
+    file on PATH to exec — only this layer can see it, and only zsh knows
+    (via $functions_source) which script defined it. Everything else in the
+    suite bypasses the question by setting CLAUDE_MV_CCFIND_SOURCE itself.
+    """
+
+    def setUp(self):
+        self.tmp = os.path.realpath(tempfile.mkdtemp(prefix="claude-mv-ccf-"))
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.repo = os.path.join(self.tmp, "repo")
+        os.makedirs(self.repo)
+        here = os.path.dirname(SCRIPT)
+        shutil.copy2(SCRIPT, self.repo)
+        shutil.copy2(os.path.join(here, "claude-mv.zsh"), self.repo)
+        self.home = os.path.join(self.tmp, "home")
+        os.makedirs(os.path.join(self.home, ".claude"))
+        # A stand-in ccfind.zsh: sourcing it defines the function, which is
+        # all the resolver looks at.
+        self.script = os.path.join(self.tmp, "ccfind.zsh")
+        with open(self.script, "w") as f:
+            f.write("ccfind() { print -r -- stub }\n")
+
+    def resolved(self, prelude="", **env_extra):
+        """What the wrapper hands the python as CLAUDE_MV_CCFIND_SOURCE."""
+        env = dict(os.environ, HOME=self.home)
+        for k in ("CLAUDE_MV_CCFIND_SCRIPT", "CLAUDE_MV_CCFIND_SOURCE"):
+            env.pop(k, None)
+        env.update(env_extra)
+        # --restore with nothing to restore exits early, so this asks the
+        # resolver its question without running a migration.
+        script = ("%s\nsource %s/claude-mv.zsh\n"
+                  "_claude_mv_ccfind_source || print -r -- NONE\n"
+                  % (prelude, shlex.quote(self.repo)))
+        r = subprocess.run([ZSH, "-c", script], capture_output=True, text=True,
+                           env=env)
+        return r.stdout.strip()
+
+    def test_a_loaded_function_is_traced_to_its_file(self):
+        """The shape ccfind actually has in an interactive shell. `command -v`
+        finds it but cannot say where it came from, and the python cannot call
+        it at all — $functions_source is the only thing that bridges them."""
+        self.assertEqual(self.resolved(prelude=f"source {shlex.quote(self.script)}"),
+                         self.script)
+
+    def test_the_override_wins_and_is_authoritative(self):
+        other = os.path.join(self.tmp, "elsewhere.zsh")
+        with open(other, "w") as f:
+            f.write("ccfind() { : }\n")
+        self.assertEqual(
+            self.resolved(prelude=f"source {shlex.quote(self.script)}",
+                          CLAUDE_MV_CCFIND_SCRIPT=other), other)
+
+    def test_an_override_that_is_not_there_means_not_installed(self):
+        """Same contract as CLAUDE_PROFILE_SCRIPT: if the user says where it
+        lives and it is not there, it is not installed — the other candidates
+        are not consulted, even with a perfectly good ccfind loaded."""
+        self.assertEqual(
+            self.resolved(prelude=f"source {shlex.quote(self.script)}",
+                          CLAUDE_MV_CCFIND_SCRIPT=os.path.join(self.tmp, "nope")),
+            "NONE")
+
+    def test_a_sibling_clone_is_found(self):
+        sib = os.path.join(self.tmp, "ccfind")
+        os.makedirs(sib)
+        shutil.copy2(self.script, os.path.join(sib, "ccfind.zsh"))
+        self.assertEqual(self.resolved(), os.path.join(sib, "ccfind.zsh"))
+
+    def test_no_ccfind_anywhere_is_not_an_error(self):
+        """The soft contract: --extract still works, off the filesystem."""
+        self.assertEqual(self.resolved(), "NONE")
 
 
 # ── live: drive the real Claude Code binary ─────────────────────────────────
@@ -1375,7 +3023,7 @@ class TestResumePickerWithTmux(FixtureCase):
                 if isinstance(obj.get("cwd"), str):
                     obj["cwd"] = cwd
                 title = obj.get("aiTitle") or title
-                lines.append(json.dumps(obj) + "\n")
+                lines.append(jsonl(obj))
             if not title:
                 continue          # no aiTitle → nothing to match on screen
             d = os.path.join(self.projects, cm.enc(cwd))
