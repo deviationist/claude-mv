@@ -13,7 +13,7 @@ anywhere on disk.
 `claude-mv` does the `mv` **and** re-keys the history to match.
 
 <p align="center">
-  <img src="assets/move-598ea1.svg" alt="claude-mv moving a folder: a restore point is taken, the folder is moved, and its Claude profile is re-keyed — the project dir renamed, session files rewritten, the config key and history entries updated — closing with a green done line and a tally">
+  <img src="assets/move-76a106.svg" alt="claude-mv moving a folder: a restore point is taken, the folder is moved, and its Claude profile is re-keyed — the project dir renamed, session files rewritten, the config key and history entries updated — closing with a green done line and a tally">
 </p>
 
 (The text is genuine output — `tools/generate-readme-svg.zsh` seeds a sandbox
@@ -108,8 +108,22 @@ the destination, since the source defaults to the current directory and the
 destination has no default at all.
 
 <p align="center">
-  <img src="assets/sessions-598ea1.svg" alt="claude-mv moving one session rather than a folder: the four conversations homed in ~/code are listed newest first with their opening prompts, one is picked by number, and only that session — its transcript and its own history entries — is re-homed onto the folder it created, leaving the others where they are">
+  <img src="assets/sessions-76a106.svg" alt="claude-mv moving one session rather than a folder: the four conversations homed in ~/code are listed newest first with their opening prompts, one is picked by number, and only that session — its transcript and its own history entries — is re-homed onto the folder it created, leaving the others where they are">
 </p>
+
+That run is the no-`fzf` shape — a numbered list and one prompt — because it is
+what every machine can do and what the whole flow reads like end to end. **With
+`fzf` installed you get a picker instead**, at both the folder steps and this
+one: type to filter, `Tab` to mark more than one conversation, `Enter` to
+confirm.
+
+<p align="center">
+  <img src="assets/picker-76a106.svg" alt="the same step on a machine with fzf installed: claude-mv --extract typed at a prompt, the four sessions homed in ~/code listed inside an fzf picker with its prompt, match count and key hints, a pointer on the first row and a Tab marker on a second — the multi-select that lets more than one conversation move at once">
+</p>
+
+It is sized to the list and runs `--reverse`, so it appears *under* the line
+that introduced it rather than taking over the terminal — the same shape
+[ccfind](https://github.com/deviationist/ccfind) uses for its picker.
 
 **Scripting it.** `--no-browse` drops the two folder prompts and takes the
 paths as arguments; add `--session` to skip the session picker as well, which
@@ -144,7 +158,7 @@ folder that has sessions of its own — a monorepo subdir you have run Claude in
 carry, and says so:
 
 <p align="center">
-  <img src="assets/profiles-598ea1.svg" alt="the same move on a machine with two Claude profiles and a nested project under the moved folder: both profiles are re-keyed in turn, each reporting its own project dirs, session files, config keys and history entries">
+  <img src="assets/profiles-76a106.svg" alt="the same move on a machine with two Claude profiles and a nested project under the moved folder: both profiles are re-keyed in turn, each reporting its own project dirs, session files, config keys and history entries">
 </p>
 
 Which profiles those are is [configurable](#configuration); by default it is
@@ -164,7 +178,7 @@ interactively on a tty, or supplied with `--on-conflict`:
 | `abort` | do nothing at all |
 
 <p align="center">
-  <img src="assets/conflict-598ea1.svg" alt="claude-mv finding history already at the destination: the conflicting project dir and config key are listed, four resolution policies are offered, consolidate is chosen, and the merge is reported per store across both profiles">
+  <img src="assets/conflict-76a106.svg" alt="claude-mv finding history already at the destination: the conflicting project dir and config key are listed, four resolution policies are offered, consolidate is chosen, and the merge is reported per store across both profiles">
 </p>
 
 Because conflicts are resolved before the move, `abort` really does mean
@@ -210,7 +224,7 @@ point to roll back to. End to end, that is: the move, the listing, the undo.
 Nothing moves until the plan has been previewed and confirmed.
 
 <p align="center">
-  <img src="assets/restore-598ea1.svg" alt="an overwrite move keeping its restore point as the archive of the history it discarded, that point then listed by claude-mv --restore, and finally rolled back: the folder move-back and the number of dirs and files to restore are previewed, confirmed, and reported done">
+  <img src="assets/restore-76a106.svg" alt="an overwrite move keeping its restore point as the archive of the history it discarded, that point then listed by claude-mv --restore, and finally rolled back: the folder move-back and the number of dirs and files to restore are previewed, confirmed, and reported done">
 </p>
 
 ## What gets migrated

@@ -645,6 +645,29 @@ def session_label(row: dict, width: int = 0) -> str:
     return f"{when}  {sid}  {row['snippet']}".ljust(width)
 
 
+def fzf_layout(nrows: int) -> list[str]:
+    """Make fzf behave like part of this command's output, not a takeover.
+
+    Without --height fzf switches to the alternate screen: the command you just
+    typed and everything above it disappear for the duration and come back
+    after, which for picking one row out of a handful is a lot of screen to
+    borrow. Sizing it to the list keeps the picker inline, under the report
+    that introduced it. A line count rather than a percentage, because the
+    right size here is "as tall as the list", and because the `~` auto-size
+    form needs a newer fzf than the plain integer does — and an unknown flag
+    would exit non-zero, which this code cannot tell apart from "cancelled".
+
+    --reverse for the same reason: every other line claude-mv prints reads
+    downward, and fzf's default layout builds upward from the bottom.
+
+    Matches ccfind's `--reverse --height=80%` in spirit; the family should not
+    disagree about which way its pickers run.
+    """
+    # rows + prompt + count + header, capped so a long list still leaves the
+    # context above it on screen.
+    return ["--reverse", f"--height={min(nrows + 3, 20)}"]
+
+
 def pick_with_fzf(rows: list[dict]) -> list[dict] | None:
     """Multi-select through fzf. None when fzf can't be used at all."""
     fzf = shutil.which("fzf")
@@ -656,6 +679,7 @@ def pick_with_fzf(rows: list[dict]) -> list[dict] | None:
     try:
         r = subprocess.run(
             [fzf, "--multi", "--with-nth=2..", "--delimiter=\t",
+             *fzf_layout(len(rows)),
              "--prompt=session(s) to move > ",
              "--header=Tab marks · Enter confirms · Esc cancels"],
             input=menu, capture_output=True, text=True)
@@ -820,6 +844,7 @@ def pick_dir_with_fzf(start: str, title: str,
         try:
             r = subprocess.run(
                 [fzf, "--with-nth=2..", "--delimiter=\t",
+                 *fzf_layout(len(rows)),
                  f"--prompt={os.path.basename(current) or '/'} > ",
                  f"--header={title} — {current}"],
                 input=menu, capture_output=True, text=True)

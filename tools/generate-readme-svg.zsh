@@ -16,10 +16,15 @@
 # keep them roughly in sync. Three differences worth knowing:
 #
 #   * claude-mv has no porcelain — every line it prints is a human-facing
-#     report — so every image is plain SGR capture. There is no screen-scraping
-#     and no stubbed dependency: --extract has two optional helpers (ccfind,
-#     fzf), and its scene pins both to their absent form, which is the shape
-#     that needs no stub and renders the same on any machine.
+#     report — so all but one image is plain SGR capture, with no
+#     screen-scraping and no stubbed dependency: --extract has two optional
+#     helpers (ccfind, fzf), and its scene pins both to their absent form,
+#     which needs no stub and renders the same on any machine. The exception is
+#     the picker scene, which is RECONSTRUCTED by fzf_frame(): fzf draws with
+#     terminal control sequences on a screen it takes over, so there is nothing
+#     on stdout to capture. ccfind reconstructs its picker for the same reason.
+#     Reconstruction can drift — if pick_with_fzf's invocation changes,
+#     fzf_frame has to change with it.
 #   * bold is rendered as font-weight, not just the bright palette. claude-mv
 #     leans on bold to pick out the identifier in a line (`did rewrite cwd in
 #     **3** session file(s)`), which the siblings' colour-only mapping would
@@ -42,11 +47,12 @@
 # consistent with the paths beside them. Nothing else is touched.
 #
 # Usage:  zsh tools/generate-readme-svg.zsh
-#           → assets/{move,profiles,conflict,restore,sessions}-<hash>.svg, older
-#             ones deleted, README <img> references rewritten (the random hash
-#             busts GitHub's camo image cache). Commit all five files.
+#           → assets/{move,profiles,conflict,restore,sessions,picker}-<hash>.svg,
+#             older ones deleted, README <img> references rewritten (the random
+#             hash busts GitHub's camo image cache). Commit all six files.
 #         zsh tools/generate-readme-svg.zsh MOVE.svg PROFILES.svg CONFLICT.svg RESTORE.svg SESSIONS.svg
-#           → fixed paths, README untouched.
+#           → fixed paths, README untouched (the picker scene is file-mode only
+#             via the default path).
 #
 # Regenerate whenever the migration report, the conflict prompt, the session
 # picker or the restore screen changes. Restore-point stamps are real timestamps, so they track the
@@ -192,6 +198,41 @@ seed_sessions() {
     'clean up the stale worktrees'                        202608110847
 }
 
+# fzf cannot be captured. It draws with terminal control sequences on a screen
+# it takes over, so there is nothing on stdout to pipe — which is why ccfind
+# reconstructs its picker rather than recording it, and why this does too.
+# Everything here is drawn from what claude-mv actually passes fzf (the prompt,
+# the header, --multi, and the rows it feeds in), so the layout is a claim
+# about our own invocation, not a guess at fzf's.
+#
+# --reverse order: prompt, then the match count, then the header, then rows.
+# The pointer sits on the current row and the marker on anything Tab has
+# selected — the two glyphs that make it a MULTI-select picker, which is the
+# part of this UI worth showing.
+fzf_frame() {  # fzf_frame <out-array> <prompt> <header> <cur> <marked> <row>...
+  local out=$1 prompt=$2 hdr=$3; integer cur=$4 marked=$5; shift 5
+  local -a f
+  integer n=$#
+  f=("$(cmdline_dim "  $prompt")"
+     "$(cmdline_dim "  $n/$n")"
+     $'\e[2m  '"$hdr"$'\e[0m')
+  integer k
+  for (( k = 1; k <= n; k++ )); do
+    # Two columns of chrome before the text, both always occupying their
+    # width, so the rows line up whether or not a row is pointed at or marked.
+    local ptr='  ' mark='  '
+    (( k == cur )) && ptr=$'\e[31m> \e[0m'
+    (( k == marked )) && mark=$'\e[32m> \e[0m'
+    if (( k == cur )); then
+      f+=("$ptr$mark"$'\e[1m'"${@[k]}"$'\e[0m')
+    else
+      f+=("$ptr$mark${@[k]}")
+    fi
+  done
+  set -A $out "${f[@]}"
+}
+cmdline_dim() { print -rn -- $'\e[2m'"$1"$'\e[0m' }
+
 # What makes the move a conflict: the target path already hosted sessions of
 # its own — the everyday case for --already-moved, where you kept working in
 # the renamed folder before reconciling.
@@ -304,6 +345,24 @@ sessions_out=$(CLAUDE_MV_FORCE_PROMPT=1 CLAUDE_MV_PICKER=plain \
 sessions_out=$(answer1 "$sessions_out" 'directory: ' '')
 sessions_out=$(answer  "$sessions_out" 'selection: ' 1)
 sessions_out=$(demoize "$(answer1 "$sessions_out" 'directory: ' '')")
+
+# 6. the same step with fzf installed, which is what most people get. The
+#    scene above deliberately pins the no-fzf fallback so it stays hermetic and
+#    shows the whole flow end to end; this one shows the picker itself, which
+#    is the part a reader with fzf would otherwise never see in the README.
+#
+#    The session rows are lifted from the same seeded profile the scene above
+#    used, so the two images agree about what is in ~/code.
+typeset -a picker_lines
+fzf_frame picker_lines 'session(s) to move > ' \
+  'Tab marks · Enter confirms · Esc cancels' 1 3 \
+  '2026-08-14 14:05  e6ca43c4  draft a tool that recovers images from the app cache' \
+  '2026-08-13 11:52  a97500af  which of these repos still target node 18?' \
+  '2026-08-12 09:31  c9e5ce94  compare the two encoder branches' \
+  '2026-08-11 08:47  68444cfe  clean up the stale worktrees'
+picker_lines=("$(cmdline_typed 'claude-mv --extract')" ''
+              "$(demoize "$(print -rn -- $'\e[1msessions homed in \e[0m\e[36m'"$DEMO/code"$'\e[0m\e[2m (4 found)\e[0m')")"
+              '' "${picker_lines[@]}")
 
 [[ -n $move_out && -n $profiles_out && -n $conflict_out && -n $restore_move \
    && -n $restore_list && -n $restore_run && -n $sessions_out ]] || {
@@ -617,6 +676,7 @@ MOVE_ARIA='claude-mv moving a folder: a restore point is taken, the folder is mo
 PROFILES_ARIA='the same move on a machine with two Claude profiles and a nested project under the moved folder: both profiles are re-keyed in turn, each reporting its own project dirs, session files, config keys and history entries'
 CONFLICT_ARIA='claude-mv finding history already at the destination: the conflicting project dir and config key are listed, four resolution policies are offered, consolidate is chosen, and the merge is reported per store across both profiles'
 RESTORE_ARIA='an overwrite move keeping its restore point as the archive of the history it discarded, that point then listed by claude-mv --restore, and finally rolled back: the folder move-back and the number of dirs and files to restore are previewed, confirmed, and reported done'
+PICKER_ARIA='the same step on a machine with fzf installed: claude-mv --extract typed at a prompt, the four sessions homed in ~/code listed inside an fzf picker with its prompt, match count and key hints, a pointer on the first row and a Tab marker on a second — the multi-select that lets more than one conversation move at once'
 SESSIONS_ARIA='claude-mv moving one session rather than a folder: the four conversations homed in ~/code are listed newest first with their opening prompts, one is picked by number, and only that session — its transcript and its own history entries — is re-homed onto the folder it created, leaving the others where they are'
 
 if [[ -n ${1:-} ]]; then
@@ -630,7 +690,7 @@ else
   local old
   for old in "$root"/assets/move-*.svg(N) "$root"/assets/profiles-*.svg(N) \
              "$root"/assets/conflict-*.svg(N) "$root"/assets/restore-*.svg(N) \
-             "$root"/assets/sessions-*.svg(N); do
+             "$root"/assets/sessions-*.svg(N) "$root"/assets/picker-*.svg(N); do
     rm -f "$old"
   done
   local hash; hash=$(xxd -l3 -p /dev/urandom)
@@ -639,6 +699,7 @@ else
   emit_svg conflict_lines "$root/assets/conflict-${hash}.svg" 'claude-mv' "$CONFLICT_ARIA"
   emit_svg restore_lines  "$root/assets/restore-${hash}.svg"  'claude-mv' "$RESTORE_ARIA"
   emit_svg sessions_lines "$root/assets/sessions-${hash}.svg" 'claude-mv' "$SESSIONS_ARIA"
+  emit_svg picker_lines   "$root/assets/picker-${hash}.svg"   'claude-mv' "$PICKER_ARIA"
   # `profiles` before `move`: the move pattern would otherwise also match the
   # tail of a profiles-*.svg reference and rewrite it to the wrong name.
   sed -i.bak \
@@ -647,6 +708,7 @@ else
     -e "s|assets/conflict-[^)\"]*\.svg|assets/conflict-${hash}.svg|" \
     -e "s|assets/restore-[^)\"]*\.svg|assets/restore-${hash}.svg|" \
     -e "s|assets/sessions-[^)\"]*\.svg|assets/sessions-${hash}.svg|" \
+    -e "s|assets/picker-[^)\"]*\.svg|assets/picker-${hash}.svg|" \
     "$root/README.md" && rm -f "$root/README.md.bak"
-  print "wrote assets/{move,profiles,conflict,restore,sessions}-${hash}.svg and updated README.md"
+  print "wrote assets/{move,profiles,conflict,restore,sessions,picker}-${hash}.svg and updated README.md"
 fi
