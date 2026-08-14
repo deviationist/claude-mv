@@ -126,18 +126,30 @@ Code history so `claude --resume` still finds the sessions at the new path.
   the tool unmodified against a throwaway `$HOME` and converts the ANSI to an
   SVG terminal grid, so the text in them is real output. Sibling of the same
   script in claude-profile / claude-usage / claude-statusline; keep the four
-  roughly in sync. **All five animate**: lines reveal top to bottom via CSS
-  `@keyframes` + per-line `animation-delay` — `<img>` on GitHub runs
-  stylesheets and blocks scripts, so CSS is the only thing that works there.
-  `step-end`, not a fade (a terminal prints a line, it does not dissolve one
-  into being — the same reasoning ccfind's frame timeline documents); the step
-  shrinks with line count so nothing exceeds ~2.4s; it runs **once** and rests
-  on the finished screen, because a looping reveal keeps blanking output
-  someone is reading. Blank lines emit no element but still consume a slot, so
-  the pauses are the real output's blank lines. Unlike ccfind's stacked frames
-  this needs no `opacity="0"` fallback: a renderer ignoring the stylesheet
-  shows every line, which is the state worth falling back to. The pacing is
-  invented — a single captured run has no timing — and the README says so.
+  roughly in sync. **All five animate**: lines reveal top to bottom, hold, and
+  loop, via CSS `@keyframes` — `<img>` on GitHub runs stylesheets and blocks
+  scripts, so CSS is the only thing that works there. `step-end`, not a fade (a
+  terminal prints a line, it does not dissolve one into being — the same
+  reasoning ccfind's frame timeline documents). Blank lines emit no element but
+  still consume a slot, so the pauses are the real output's blank lines.
+  Unlike ccfind's stacked frames this needs no `opacity="0"` fallback: a
+  renderer ignoring the stylesheet shows every line, which is the state worth
+  falling back to. The pacing is invented — a single captured run has no
+  timing — and the README says so.
+  **Four things here are load-bearing; changing any one silently breaks it:**
+  (1) it must **loop** — a browser does not pause a CSS animation in an
+  offscreen `<img>`, so a run-once reveal on an image below the fold is
+  finished before anyone scrolls to it (measured: an image 3000px down was
+  fully revealed the instant it came into view). Start-on-scroll is not
+  available; that needs script. (2) **per-line `@keyframes`, never one rule
+  with per-line `animation-delay`** — a delay applies to the first iteration
+  only, so with `infinite` every line would snap into sync on the second pass
+  and the reveal would never be seen again. (3) **one stop per switch** —
+  duplicate percentages collapse to the last declaration, which is why line 0
+  is special-cased to plain `opacity: 1` rather than a 0%/0% pair. (4) the
+  reduced-motion rule needs **`!important`**: the per-line `#l<i>` selector
+  outranks `text.l`, so without it the animation keeps running for anyone who
+  asked for less motion.
 
 ## Working on this
 
