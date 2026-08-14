@@ -99,7 +99,15 @@ Code history so `claude --resume` still finds the sessions at the new path.
   full-text search over transcripts; without it the same list comes off the
   filesystem, still across every profile. *fzf* drives both pickers — the
   session multi-select and the directory browser; without it they become a
-  numbered prompt and a readline path prompt with tab completion. In `auto`,
+  numbered prompt and a readline path prompt with tab completion. Both are
+  invoked through `fzf_layout()`: **`--reverse` and a `--height` sized to the
+  list**. Without `--height` fzf takes the alternate screen, so the command and
+  everything above it vanish for the duration — a lot of screen to borrow for
+  picking one row — and its default layout builds upward against every other
+  line this tool prints. A line count rather than `~N%`: the auto-size form
+  needs a newer fzf, and an unknown flag exits non-zero, which `pick_with_fzf`
+  cannot tell apart from "cancelled". Mirrors ccfind's `--reverse --height=80%`;
+  the family should not disagree about which way its pickers run. In `auto`,
   fzf is only launched when there is a tty (`fzf_wanted`): it draws a
   full-screen UI and reads the keyboard, so starting it on a pipe hangs rather
   than fails, which is exactly what the suite hit. Every failure path falls
@@ -137,6 +145,13 @@ Code history so `claude --resume` still finds the sessions at the new path.
   this needs no `opacity="0"` fallback: a renderer ignoring the stylesheet
   shows everything, which is the state worth falling back to. The pacing is
   invented — a single captured run has no timing — and the README says so.
+  **fzf cannot be captured** — it draws with terminal control sequences on a
+  screen it takes over, so there is nothing on stdout to pipe. The picker scene
+  is therefore *reconstructed* by `fzf_frame()` from what claude-mv actually
+  passes fzf (prompt, header, `--multi`, and the rows it feeds in), the same
+  approach ccfind takes and for the same reason. Reconstruction means it can
+  drift from reality: if the invocation in `pick_with_fzf` changes, that
+  function has to change with it.
   **Five things are load-bearing; changing any one silently breaks it:**
   (1) it must **loop** — a browser does not pause a CSS animation in an
   offscreen `<img>`, so a run-once reveal on an image below the fold is

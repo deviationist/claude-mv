@@ -2657,6 +2657,29 @@ class TestSessionPickerWithFzf(SessionFixture):
         return {"CLAUDE_MV_SOURCE": "fs", "CLAUDE_MV_PICKER": "fzf",
                 "PATH": self.bin + os.pathsep + os.environ["PATH"]}
 
+    def test_fzf_is_asked_to_stay_inline_and_read_downward(self):
+        """Without --height fzf takes the alternate screen, so the command and
+        everything above it vanish while you pick — a lot of screen to borrow
+        for choosing one row. And its default layout builds upward, against
+        every other line this tool prints. Both are easy to drop by accident
+        when the invocation is edited, so both are pinned."""
+        argv_path = os.path.join(self.tmp, "argv")
+        # NB the shell's own %s would collide with a python format string.
+        self.write_fzf("#!/bin/sh\nfor a in \"$@\"; do echo \"$a\"; done > "
+                       + shlex.quote(argv_path) + "\nsed -n 1p\n")
+        # --no-browse so the only fzf run is the session picker; otherwise the
+        # two folder pickers run either side of it and the file records
+        # whichever went last.
+        self.run_mv("--extract", "--no-browse", self.code, self.proj,
+                    env_extra=self.env())
+        with open(os.path.join(self.tmp, "argv")) as f:
+            argv = f.read().split("\n")
+        self.assertIn("--reverse", argv)
+        height = [a for a in argv if a.startswith("--height=")]
+        self.assertTrue(height, f"no --height in {argv}")
+        # sized to the list rather than a fixed slab of screen
+        self.assertEqual(height[0], "--height=6")   # 3 sessions + 3 chrome
+
     def test_the_marked_row_is_the_session_that_moves(self):
         # second row of the menu, mapped back by its index column
         self.write_fzf("#!/bin/sh\nsed -n 2p\n")
