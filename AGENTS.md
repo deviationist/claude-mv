@@ -126,30 +126,35 @@ Code history so `claude --resume` still finds the sessions at the new path.
   the tool unmodified against a throwaway `$HOME` and converts the ANSI to an
   SVG terminal grid, so the text in them is real output. Sibling of the same
   script in claude-profile / claude-usage / claude-statusline; keep the four
-  roughly in sync. **All five animate**: lines reveal top to bottom, hold, and
-  loop, via CSS `@keyframes` — `<img>` on GitHub runs stylesheets and blocks
+  roughly in sync. **All five animate as a terminal session**: the command
+  types itself a character at a time with a block cursor walking after it, a
+  beat for the Enter, then the output arrives line by line; multi-command
+  scenes (restore has three) interleave type→run→print. Then it holds and
+  loops. All CSS `@keyframes` — `<img>` on GitHub runs stylesheets and blocks
   scripts, so CSS is the only thing that works there. `step-end`, not a fade (a
-  terminal prints a line, it does not dissolve one into being — the same
-  reasoning ccfind's frame timeline documents). Blank lines emit no element but
-  still consume a slot, so the pauses are the real output's blank lines.
-  Unlike ccfind's stacked frames this needs no `opacity="0"` fallback: a
-  renderer ignoring the stylesheet shows every line, which is the state worth
-  falling back to. The pacing is invented — a single captured run has no
-  timing — and the README says so.
-  **Four things here are load-bearing; changing any one silently breaks it:**
+  terminal prints a character, it does not dissolve one into being — the same
+  reasoning ccfind's frame timeline documents). Unlike ccfind's stacked frames
+  this needs no `opacity="0"` fallback: a renderer ignoring the stylesheet
+  shows everything, which is the state worth falling back to. The pacing is
+  invented — a single captured run has no timing — and the README says so.
+  **Five things are load-bearing; changing any one silently breaks it:**
   (1) it must **loop** — a browser does not pause a CSS animation in an
   offscreen `<img>`, so a run-once reveal on an image below the fold is
   finished before anyone scrolls to it (measured: an image 3000px down was
   fully revealed the instant it came into view). Start-on-scroll is not
-  available; that needs script. (2) **per-line `@keyframes`, never one rule
-  with per-line `animation-delay`** — a delay applies to the first iteration
-  only, so with `infinite` every line would snap into sync on the second pass
-  and the reveal would never be seen again. (3) **one stop per switch** —
-  duplicate percentages collapse to the last declaration, which is why line 0
-  is special-cased to plain `opacity: 1` rather than a 0%/0% pair. (4) the
-  reduced-motion rule needs **`!important`**: the per-line `#l<i>` selector
-  outranks `text.l`, so without it the animation keeps running for anyone who
-  asked for less motion.
+  available; that needs script. The cycle is held to 7–9s so the wait after
+  scrolling is bounded. (2) **per-element `@keyframes`, never one rule with
+  per-element `animation-delay`** — a delay applies to the first iteration
+  only, so with `infinite` everything would snap into sync on the second pass
+  and the sequence would never be seen again. (3) **one stop per switch** —
+  duplicate percentages collapse to the last declaration. (4) the
+  reduced-motion rule needs **`!important`**: the per-element `#l<i>`/`#c<i>_<j>`
+  selectors outrank `text.l`. (5) typing is **one element per character** plus
+  one per cursor position, not a whole-line copy per keystroke — the frame-per-
+  keystroke shape ccfind uses would multiply a 58-character command by every
+  line it sits on. Timing comes from a running clock (`AT[]`), not index ×
+  step, because a command consumes a keystroke per character rather than one
+  slot.
 
 ## Working on this
 

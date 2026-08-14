@@ -242,6 +242,14 @@ answer1() {  # answer1 <blob> <prompt> <typed>
 
 cmdline() { print -rn -- $'\e[2m%\e[0m '$'\e[1m'"$1"$'\e[0m' }
 
+# A command line, marked so emit_svg types it out a character at a time rather
+# than printing it whole. \x01 cannot occur in captured output, so the marker
+# needs no escaping anywhere else. The text after it is the bare command — the
+# "% " prompt is drawn by the emitter, since a shell prints that before you
+# start typing rather than as part of what you type.
+CMD_MARK=$'\x01'
+cmdline_typed() { print -rn -- "$CMD_MARK$1" }
+
 # ---- capture the real output ----------------------------------------------
 # 1. the happy path, and the hero: one folder, one profile, the four stores it
 #    keys. Multi-profile and nested projects are capability, not the everyday
@@ -315,8 +323,10 @@ ANSI_N=('#000000' '#b43c2a' '#00c200' '#c7c400' '#0225c7' '#ca30c7' '#00c5c7' '#
 ANSI_B=('#686868' '#dd7975' '#58e790' '#ece100' '#6871ff' '#ff77ff' '#60fdff' '#ffffff')
 FONT="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace"
 integer FS=13 LH=20 TH=30 PX=20 PY=14 SLACK=24 MINCOLS=52
-local -F REVEAL=2.4      # seconds any image may spend revealing itself
-local -F HOLD=9.0        # …then stands finished this long before replaying
+local -F REVEAL=1.8      # seconds any image may spend revealing its output
+local -F TYPEMAX=2.2     # …and typing its command(s), however long they are
+local -F ENTER=0.35      # the beat between the last keystroke and the output
+local -F HOLD=4.0        # …then it stands finished this long before replaying
 
 # Terminal grid: every character is pinned to its own cell, so a row occupies
 # exactly (columns × cw) whichever font the renderer falls back to — which is
@@ -489,20 +499,65 @@ emit_svg() {
     # a cross-fade ghosts one frame through another; here it would just make
     # text that never behaves like text.) Two stops per line, each holding
     # until the next flips it.
-    integer nl=${#_lines}
-    local -F cycle=$(( step * (nl - 1) + HOLD ))
+    # A running clock rather than index × step, because a command line does not
+    # take one slot — it takes a keystroke per character. That is what gives
+    # the sequence its shape: the command types, there is a beat for the Enter,
+    # then its output arrives.
+    integer nl=${#_lines} nchars=0 j
+    local plain
+    for (( i = 0; i < nl; i++ )); do
+      [[ ${_lines[i+1]} == ${CMD_MARK}* ]] && (( nchars += ${#_lines[i+1]} - 1 ))
+    done
+    # Per-character time, shrunk so no single command spends longer than TYPEMAX
+    # on its own. A demo that types at a realistic pace reads as slow, not as
+    # authentic.
+    local -F tstep=$(( nchars ? TYPEMAX / nchars : 0 ))
+    (( tstep > 0.055 )) && tstep=0.055
+    local -F clock=0 cycle=0 at
+    # First pass: what time does each row land, and how long is the cycle?
+    typeset -a AT
+    for (( i = 0; i < nl; i++ )); do
+      line=${_lines[i+1]}
+      AT[i+1]=$clock
+      if [[ $line == ${CMD_MARK}* ]]; then
+        clock=$(( clock + (${#line} - 1) * tstep + ENTER ))
+      else
+        clock=$(( clock + step ))
+      fi
+    done
+    cycle=$(( clock + HOLD ))
+
     print -r -- "  <style>"
-    integer i=0
     local -F pct
     for (( i = 0; i < nl; i++ )); do
-      [[ -n ${_lines[i+1]} ]] || continue          # blanks draw nothing
-      # Line 0 is the `%` command line: never animated, so the command stands
-      # while the output it produced replays underneath it.
-      if (( i == 0 )); then
-        print -r -- "    #l0 { opacity: 1 }"
+      line=${_lines[i+1]}
+      [[ -n $line ]] || continue                   # blanks draw nothing
+      at=$AT[i+1]
+      if [[ $line == ${CMD_MARK}* ]]; then
+        plain=${line#$CMD_MARK}
+        # The prompt is already on screen before anything is typed.
+        pct=$(( at * 100.0 / cycle ))
+        printf '    @keyframes cmvp%d { 0%%{opacity:0} %.3f%%{opacity:1} }\n' $i $pct
+        printf '    #p%d { animation: cmvp%d %.2fs step-end infinite }\n' $i $i $cycle
+        for (( j = 1; j <= ${#plain}; j++ )); do
+          # character j appears on its own keystroke and stays…
+          pct=$(( (at + j * tstep) * 100.0 / cycle ))
+          printf '    @keyframes cmvc%d_%d { 0%%{opacity:0} %.3f%%{opacity:1} }\n' $i $j $pct
+          printf '    #c%d_%d { animation: cmvc%d_%d %.2fs step-end infinite }\n' $i $j $i $j $cycle
+        done
+        for (( j = 0; j <= ${#plain}; j++ )); do
+          # …while the block cursor is alive only for its own position, so it
+          # walks along the line and is gone once Enter is pressed.
+          local -F c0=$(( (at + j * tstep) * 100.0 / cycle ))
+          local -F c1=$(( (at + (j + 1) * tstep) * 100.0 / cycle ))
+          (( j == ${#plain} )) && c1=$(( (at + j * tstep + ENTER) * 100.0 / cycle ))
+          printf '    @keyframes cmvk%d_%d { 0%%{opacity:0} %.3f%%{opacity:1} %.3f%%{opacity:0} }\n' \
+                 $i $j $c0 $c1
+          printf '    #k%d_%d { animation: cmvk%d_%d %.2fs step-end infinite }\n' $i $j $i $j $cycle
+        done
         continue
       fi
-      pct=$(( (i * step) * 100.0 / cycle ))
+      pct=$(( at * 100.0 / cycle ))
       # NB one stop per switch. Writing two at the same percentage does not
       # work — duplicates collapse to the last declaration.
       printf '    @keyframes cmv%d { 0%%{opacity:0} %.3f%%{opacity:1} }\n' $i $pct
@@ -523,7 +578,23 @@ emit_svg() {
     for (( i = 0; i < nl; i++ )); do
       line=${_lines[i+1]}
       y=$(( TH + PY + i * LH + FS ))
-      [[ -n $line ]] && print -r -- "  <text id=\"l$i\" class=\"l\" x=\"$PX\" y=\"$y\" font-family=\"$FONT\" font-size=\"$FS\" xml:space=\"preserve\" fill=\"$FG\">$(render_ansi "$line")</text>"
+      [[ -n $line ]] || continue
+      if [[ $line == ${CMD_MARK}* ]]; then
+        plain=${line#$CMD_MARK}
+        # The prompt, then one element per character, then one per cursor
+        # position. Each is a single glyph pinned to its own column, so the
+        # line assembles itself in place — no reflow, and none of the
+        # duplicated whole-line copies a frame-per-keystroke would cost.
+        print -r -- "  <text id=\"p$i\" class=\"l\" x=\"$PX\" y=\"$y\" font-family=\"$FONT\" font-size=\"$FS\" xml:space=\"preserve\" fill=\"$DIMC\">%</text>"
+        for (( j = 1; j <= ${#plain}; j++ )); do
+          print -r -- "  <text id=\"c${i}_$j\" class=\"l\" x=\"$XCOL[j+2]\" y=\"$y\" font-family=\"$FONT\" font-size=\"$FS\" font-weight=\"700\" xml:space=\"preserve\" fill=\"$FG\">$(xesc "$plain[j]")</text>"
+        done
+        for (( j = 0; j <= ${#plain}; j++ )); do
+          print -r -- "  <text id=\"k${i}_$j\" class=\"l\" x=\"$XCOL[j+3]\" y=\"$y\" font-family=\"$FONT\" font-size=\"$FS\" xml:space=\"preserve\" fill=\"$FG\">█</text>"
+        done
+        continue
+      fi
+      print -r -- "  <text id=\"l$i\" class=\"l\" x=\"$PX\" y=\"$y\" font-family=\"$FONT\" font-size=\"$FS\" xml:space=\"preserve\" fill=\"$FG\">$(render_ansi "$line")</text>"
     done
     print -r -- "</svg>"
   } > "$out"
@@ -531,15 +602,15 @@ emit_svg() {
 
 # ---- compose ---------------------------------------------------------------
 typeset -a move_lines profiles_lines conflict_lines restore_lines sessions_lines
-sessions_lines=("$(cmdline 'claude-mv --extract ~/code ~/code/lipsum')" ''
+sessions_lines=("$(cmdline_typed 'claude-mv --extract ~/code ~/code/lipsum')" ''
                 "${(@f)sessions_out}")
-move_lines=("$(cmdline 'claude-mv ~/code/lipsum ~/code/foo')" '' "${(@f)move_out}")
-profiles_lines=("$(cmdline 'claude-mv ~/code/lipsum ~/code/foo')" '' "${(@f)profiles_out}")
-conflict_lines=("$(cmdline 'claude-mv ~/code/lipsum ~/code/foo')" '' "${(@f)conflict_out}")
-restore_lines=("$(cmdline 'claude-mv --on-conflict overwrite ~/code/lipsum ~/code/foo')" ''
+move_lines=("$(cmdline_typed 'claude-mv ~/code/lipsum ~/code/foo')" '' "${(@f)move_out}")
+profiles_lines=("$(cmdline_typed 'claude-mv ~/code/lipsum ~/code/foo')" '' "${(@f)profiles_out}")
+conflict_lines=("$(cmdline_typed 'claude-mv ~/code/lipsum ~/code/foo')" '' "${(@f)conflict_out}")
+restore_lines=("$(cmdline_typed 'claude-mv --on-conflict overwrite ~/code/lipsum ~/code/foo')" ''
                "${(@f)restore_move}" ''
-               "$(cmdline 'claude-mv --restore')" '' "${(@f)restore_list}" ''
-               "$(cmdline 'claude-mv --restore latest')" '' "${(@f)restore_run}")
+               "$(cmdline_typed 'claude-mv --restore')" '' "${(@f)restore_list}" ''
+               "$(cmdline_typed 'claude-mv --restore latest')" '' "${(@f)restore_run}")
 
 # ---- write -----------------------------------------------------------------
 MOVE_ARIA='claude-mv moving a folder: a restore point is taken, the folder is moved, and its Claude profile is re-keyed — the project dir renamed, session files rewritten, the config key and history entries updated — closing with a green done line and a tally'
