@@ -13,7 +13,7 @@ anywhere on disk.
 `claude-mv` does the `mv` **and** re-keys the history to match.
 
 <p align="center">
-  <img src="assets/move-0f42e6.svg" alt="claude-mv moving a folder: a restore point is taken, the folder is moved, and its Claude profile is re-keyed — the project dir renamed, session files rewritten, the config key and history entries updated — closing with a green done line and a tally">
+  <img src="assets/move-70ec92.svg" alt="claude-mv moving a folder: a restore point is taken, the folder is moved, and its Claude profile is re-keyed — the project dir renamed, session files rewritten, the config key and history entries updated — closing with a green done line and a tally">
 </p>
 
 (The text is genuine output — `tools/generate-readme-svg.zsh` seeds a sandbox
@@ -108,7 +108,7 @@ the destination, since the source defaults to the current directory and the
 destination has no default at all.
 
 <p align="center">
-  <img src="assets/sessions-0f42e6.svg" alt="claude-mv moving one session rather than a folder: the four conversations homed in ~/code are listed newest first with their opening prompts, one is picked by number, and only that session — its transcript and its own history entries — is re-homed onto the folder it created, leaving the others where they are">
+  <img src="assets/sessions-70ec92.svg" alt="claude-mv moving one session rather than a folder: the four conversations homed in ~/code are listed newest first with their opening prompts, one is picked by number, and only that session — its transcript and its own history entries — is re-homed onto the folder it created, leaving the others where they are">
 </p>
 
 **Scripting it.** `--no-browse` drops the two folder prompts and takes the
@@ -144,7 +144,7 @@ folder that has sessions of its own — a monorepo subdir you have run Claude in
 carry, and says so:
 
 <p align="center">
-  <img src="assets/profiles-0f42e6.svg" alt="the same move on a machine with two Claude profiles and a nested project under the moved folder: both profiles are re-keyed in turn, each reporting its own project dirs, session files, config keys and history entries">
+  <img src="assets/profiles-70ec92.svg" alt="the same move on a machine with two Claude profiles and a nested project under the moved folder: both profiles are re-keyed in turn, each reporting its own project dirs, session files, config keys and history entries">
 </p>
 
 Which profiles those are is [configurable](#configuration); by default it is
@@ -164,7 +164,7 @@ interactively on a tty, or supplied with `--on-conflict`:
 | `abort` | do nothing at all |
 
 <p align="center">
-  <img src="assets/conflict-0f42e6.svg" alt="claude-mv finding history already at the destination: the conflicting project dir and config key are listed, four resolution policies are offered, consolidate is chosen, and the merge is reported per store across both profiles">
+  <img src="assets/conflict-70ec92.svg" alt="claude-mv finding history already at the destination: the conflicting project dir and config key are listed, four resolution policies are offered, consolidate is chosen, and the merge is reported per store across both profiles">
 </p>
 
 Because conflicts are resolved before the move, `abort` really does mean
@@ -210,7 +210,7 @@ point to roll back to. End to end, that is: the move, the listing, the undo.
 Nothing moves until the plan has been previewed and confirmed.
 
 <p align="center">
-  <img src="assets/restore-0f42e6.svg" alt="an overwrite move keeping its restore point as the archive of the history it discarded, that point then listed by claude-mv --restore, and finally rolled back: the folder move-back and the number of dirs and files to restore are previewed, confirmed, and reported done">
+  <img src="assets/restore-70ec92.svg" alt="an overwrite move keeping its restore point as the archive of the history it discarded, that point then listed by claude-mv --restore, and finally rolled back: the folder move-back and the number of dirs and files to restore are previewed, confirmed, and reported done">
 </p>
 
 ## What gets migrated
@@ -337,15 +337,24 @@ the migration report, the conflict prompt, the session picker or the restore
 screen changes; commit the SVGs together with the README, whose `<img>` refs it
 rewrites (the hash in the filename busts GitHub's image cache).
 
-The lines then reveal themselves top to bottom, once, and stop on the finished
-screen. That is plain CSS `@keyframes` with a per-line `animation-delay` —
-GitHub serves a README image through `<img>`, which runs stylesheets and blocks
-scripts, so CSS is the only mechanism that survives the trip. `step-end` rather
-than a fade, because a terminal prints a line, it does not dissolve one into
-being. The per-line step shrinks as a screen gets longer so no image spends
-more than ~2.4s revealing itself, and `prefers-reduced-motion: reduce` shows
-the whole thing at once. A renderer that ignores the stylesheet also shows the
-whole thing, since the resting state of every line is simply visible.
+The lines then reveal themselves top to bottom, hold on the finished screen for
+nine seconds, and replay. That is plain CSS `@keyframes` — GitHub serves a
+README image through `<img>`, which runs stylesheets and blocks scripts, so CSS
+is the only mechanism that survives the trip. `step-end` rather than a fade,
+because a terminal prints a line, it does not dissolve one into being. The
+per-line step shrinks as a screen gets longer, so no image spends more than
+~2.4s revealing itself and the completed text stands for most of every cycle.
+
+**It loops because it has to.** A browser does not pause a CSS animation inside
+an offscreen `<img>`: an image below the fold has already finished revealing by
+the time you scroll to it. Playing once would mean four of these five images
+never animate for anyone who didn't land at the top. Starting on scroll instead
+isn't available — that needs script, which `<img>` doesn't run.
+
+`prefers-reduced-motion: reduce` shows the whole thing, permanently. So does a
+renderer that ignores the stylesheet, since the resting state of every line is
+simply visible. The `%` command line never animates, so it stands while the
+output it produced replays underneath.
 
 ## Tests
 

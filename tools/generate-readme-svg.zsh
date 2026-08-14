@@ -316,6 +316,7 @@ ANSI_B=('#686868' '#dd7975' '#58e790' '#ece100' '#6871ff' '#ff77ff' '#60fdff' '#
 FONT="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace"
 integer FS=13 LH=20 TH=30 PX=20 PY=14 SLACK=24 MINCOLS=52
 local -F REVEAL=2.4      # seconds any image may spend revealing itself
+local -F HOLD=9.0        # …then stands finished this long before replaying
 
 # Terminal grid: every character is pinned to its own cell, so a row occupies
 # exactly (columns × cw) whichever font the renderer falls back to — which is
@@ -465,36 +466,64 @@ emit_svg() {
     # the pacing are the blank lines in the real output.
     local -F step=$(( REVEAL / ${#_lines} ))
     (( step > 0.06 )) && step=0.06
+    # It has to LOOP, and the reason is measurable rather than aesthetic: a
+    # browser does not pause a CSS animation inside an offscreen <img>. A
+    # run-once reveal on an image below the fold has therefore already
+    # finished by the time anyone scrolls to it — verified, an image 3000px
+    # down showed fully revealed the instant it came into view. Looping is the
+    # only way a reader who did not land at the top ever sees it, and
+    # "animate only when in view" is not on the table: that needs scroll
+    # awareness, which means script, which <img> does not run.
+    #
+    # So: one shared cycle per image — the reveal, then a long hold on the
+    # finished screen. The hold is what keeps a loop tolerable on a report
+    # someone is reading; text stands complete for most of every cycle.
+    #
+    # Per-line @keyframes rather than one rule with per-line animation-delay,
+    # because a delay applies to the FIRST iteration only — with `infinite`
+    # the lines would all snap into sync on the second pass and the reveal
+    # would never be seen again.
+    #
     # step-end, not a fade: a terminal does not dissolve a line into being, it
     # prints it. (The same reasoning ccfind's frame timeline documents — there
     # a cross-fade ghosts one frame through another; here it would just make
-    # text that never behaves like text.) One stop, holding until it flips.
-    #
-    # No iteration count, so this runs once and rests on the finished screen.
-    # A looping reveal would keep blanking output someone is still reading,
-    # and the worst case of running once — a reader who arrives after it has
-    # played — is the static image this README had before.
+    # text that never behaves like text.) Two stops per line, each holding
+    # until the next flips it.
+    integer nl=${#_lines}
+    local -F cycle=$(( step * (nl - 1) + HOLD ))
     print -r -- "  <style>"
-    print -r -- "    @keyframes cmv-in { from { opacity: 0 } to { opacity: 1 } }"
-    print -r -- "    text.l { animation: cmv-in 0.01s step-end both }"
+    integer i=0
+    local -F pct
+    for (( i = 0; i < nl; i++ )); do
+      [[ -n ${_lines[i+1]} ]] || continue          # blanks draw nothing
+      # Line 0 is the `%` command line: never animated, so the command stands
+      # while the output it produced replays underneath it.
+      if (( i == 0 )); then
+        print -r -- "    #l0 { opacity: 1 }"
+        continue
+      fi
+      pct=$(( (i * step) * 100.0 / cycle ))
+      # NB one stop per switch. Writing two at the same percentage does not
+      # work — duplicates collapse to the last declaration.
+      printf '    @keyframes cmv%d { 0%%{opacity:0} %.3f%%{opacity:1} }\n' $i $pct
+      printf '    #l%d { animation: cmv%d %.2fs step-end infinite }\n' $i $i $cycle
+    done
     # Motion is decoration here; the text is the content. Anyone who has asked
-    # the OS for less of it gets the finished screen immediately.
+    # the OS for less of it gets the finished screen, permanently.
     #
-    # A renderer that ignores <style> altogether needs nothing: with no
+    # A renderer that ignores <style> altogether needs nothing either: with no
     # animation applied these lines are simply opaque, which is the whole
     # screen — the state worth falling back to. (ccfind has to set opacity="0"
     # per frame for this, because its frames stack; a reveal does not.)
     print -r -- "    @media (prefers-reduced-motion: reduce) {"
-    print -r -- "      text.l { animation: none; opacity: 1 }"
+    print -r -- "      text.l { animation: none !important; opacity: 1 }"
     print -r -- "    }"
     print -r -- "  </style>"
-    integer i=0 y
-    local delay
-    for line in "${_lines[@]}"; do
+    integer y
+    for (( i = 0; i < nl; i++ )); do
+      line=${_lines[i+1]}
       y=$(( TH + PY + i * LH + FS ))
-      printf -v delay '%.2f' $(( i * step ))
-      [[ -n $line ]] && print -r -- "  <text class=\"l\" style=\"animation-delay:${delay}s\" x=\"$PX\" y=\"$y\" font-family=\"$FONT\" font-size=\"$FS\" xml:space=\"preserve\" fill=\"$FG\">$(render_ansi "$line")</text>"
-      (( i++ ))
+      [[ -n $line ]] && print -r -- "  <text id=\"l$i\" class=\"l\" x=\"$PX\" y=\"$y\" font-family=\"$FONT\" font-size=\"$FS\" xml:space=\"preserve\" fill=\"$FG\">$(render_ansi "$line")</text>"
     done
     print -r -- "</svg>"
   } > "$out"
