@@ -21,6 +21,40 @@ Code history so `claude --resume` still finds the sessions at the new path.
   nothing, re-key the history stranded on the old path. `src` must be gone,
   `dst` must exist. The old path can't be derived from the encoded dir name —
   it must be given.
+- **`--extract`** moves individual *sessions* instead of a folder — for the
+  project born mid-session in a parent dir (you were in `~/code`, told Claude
+  to `mkdir` and `cd`, and the whole conversation stayed keyed on `~/code`).
+  Moving all of `~/code`'s history would be wrong, so this picks out the ones
+  that don't belong. Candidates are the sessions **homed in** `src` — the
+  project dir a session was *born* in, whatever cwd it later wandered to,
+  which is exactly the session a "latest cwd" match would miss. What moves:
+  `<id>.jsonl`, its `<id>/` sidecar (subagents + tool results — the one
+  session-keyed store living *inside* a project dir), and that session's
+  `history.jsonl` entries, selected by `sessionId`. What deliberately does
+  **not**: the transcript's `cwd` lines (nothing moved on disk, so rewriting
+  them would falsify the record — and since dst is normally *inside* src, a
+  prefix remap would hit the lines already naming dst a second time), and the
+  config `projects` map (the source project still exists; fabricating a
+  destination entry would transplant its trust flag and `allowedTools` onto a
+  path the user never approved). The `under(dst, src)` guard is skipped here —
+  moving into a subdirectory is the whole point. Conflicts are per-session and
+  resolve with `--on-conflict {overwrite,skip,abort}`, default `skip`. A
+  destination counts as occupied if **either** half is there — the `<id>.jsonl`
+  or the `<id>/` sidecar. A stray sidecar alone is rare but real (an
+  interrupted run, a half-deleted session), and treating it as a clean move
+  would land the transcript and *then* fail renaming the sidecar onto it,
+  stopping halfway — breaking the up-front-detection promise — besides handing
+  one conversation another's subagent transcripts.
+- **`--extract` is a three-step guide**: which folder (a directory browser
+  starting at the cwd, each row annotated with its session count), which
+  sessions, then where to — in that order, because the destination is only
+  decidable once you know what you are moving. Positionals **seed** the two
+  folder steps rather than skipping them; a lone positional is always `dst`,
+  since `src` defaults to the cwd and `dst` has no default. `--no-browse`
+  drops both folder steps and then requires both paths — it does *not* mean
+  non-interactive, which is why it is not called that: the session picker
+  still runs, and `--session` is what silences that. **`dst` is never
+  inferred** — not from the cwd, the source, or the session.
 - **Conflicts** (destination already has history) are detected *before* the
   `mv` and resolved by one policy: `--on-conflict
   {overwrite,consolidate,rename-only,abort}`, asked interactively on a tty,
@@ -53,29 +87,86 @@ Code history so `claude --resume` still finds the sessions at the new path.
   clone — and asks the side-effect-free `list` porcelain), else `~/.claude`
   plus `~/.claude-personal`. The bridge is soft: every failure path falls
   through, and nothing else in the repo knows claude-profile exists.
+  The wrapper also resolves **ccfind** for `--extract`, same three-candidate
+  shape but one extra trick: ccfind is a zsh *function*, so `command -v` finds
+  it while the python still can't call it — `$functions_source[ccfind]` traces
+  it back to the file to source. Order: `$CLAUDE_MV_CCFIND_SCRIPT` (env, not
+  `.env`, and authoritative) → loaded function → sibling clone. Handed down as
+  `CLAUDE_MV_CCFIND_SOURCE`.
 - `claude-mv.py` — all the logic; stdlib only, no deps.
-- `tests/test_claude_mv.py` — seven layers (unit, e2e, multi-profile, zsh
-  wrapper, conformance against the real `~/.claude`, live against the `claude`
-  binary, resume UI under tmux). The last two opt in with
-  `CLAUDE_MV_LIVE_TEST=1`; they need no auth and spend no tokens. The wrapper
-  layer needs zsh — CI installs it on Linux and runs `zsh --version` *without*
-  a `|| true`, so a runner image that drops zsh fails the build instead of
-  quietly skipping the layer.
+- **Two soft dependencies, both only for `--extract`, neither required.**
+  *ccfind* lists the candidate sessions (`--json -l -x -d <src>`) and adds
+  full-text search over transcripts; without it the same list comes off the
+  filesystem, still across every profile. *fzf* drives both pickers — the
+  session multi-select and the directory browser; without it they become a
+  numbered prompt and a readline path prompt with tab completion. In `auto`,
+  fzf is only launched when there is a tty (`fzf_wanted`): it draws a
+  full-screen UI and reads the keyboard, so starting it on a pipe hangs rather
+  than fails, which is exactly what the suite hit. Every failure path falls
+  through — except
+  a `CLAUDE_MV_SOURCE=ccfind` that can't be honoured, which fails loudly
+  because being asked for a specific source and quietly using another is worse
+  than stopping. **`scope_exact` in ccfind's JSON is the compatibility
+  handshake**: a ccfind that took `-x` and ignored it would answer about the
+  whole *subtree*, so anything but a definite `true` means fall back.
+- `tests/test_claude_mv.py` — nine layers (unit, e2e, multi-profile, session
+  sources, session move + picker, zsh wrapper, conformance against the real
+  `~/.claude`, live against the `claude` binary, resume UI under tmux). The
+  last two opt in with `CLAUDE_MV_LIVE_TEST=1`; they need no auth and spend no
+  tokens. The wrapper layer needs zsh — CI installs it on Linux and runs `zsh
+  --version` *without* a `|| true`, so a runner image that drops zsh fails the
+  build instead of quietly skipping the layer.
+  **`TestSessionSourcesAgree` is the one that keeps the soft dep honest**: it
+  runs the *real* ccfind and the filesystem walk over one fixture and demands
+  identical id sets, because a source that disagrees makes the tool behave
+  differently per machine and no per-source test can see it. It skips without
+  a ccfind checkout — CI included — so treat it as a local guard, not a
+  verified-everywhere claim.
 - `tools/generate-readme-svg.zsh` → `assets/*.svg` — the README images. Runs
   the tool unmodified against a throwaway `$HOME` and converts the ANSI to an
   SVG terminal grid, so the text in them is real output. Sibling of the same
   script in claude-profile / claude-usage / claude-statusline; keep the four
-  roughly in sync.
+  roughly in sync. **All five animate**: lines reveal top to bottom via CSS
+  `@keyframes` + per-line `animation-delay` — `<img>` on GitHub runs
+  stylesheets and blocks scripts, so CSS is the only thing that works there.
+  `step-end`, not a fade (a terminal prints a line, it does not dissolve one
+  into being — the same reasoning ccfind's frame timeline documents); the step
+  shrinks with line count so nothing exceeds ~2.4s; it runs **once** and rests
+  on the finished screen, because a looping reveal keeps blanking output
+  someone is reading. Blank lines emit no element but still consume a slot, so
+  the pauses are the real output's blank lines. Unlike ccfind's stacked frames
+  this needs no `opacity="0"` fallback: a renderer ignoring the stylesheet
+  shows every line, which is the state worth falling back to. The pacing is
+  invented — a single captured run has no timing — and the README says so.
 
 ## Working on this
 
-- Run `python3 tests/test_claude_mv.py` — hermetic, ~1s. Never point a test at
+- Run `python3 tests/test_claude_mv.py` — hermetic, ~8s. Never point a test at
   the real `~/.claude` for anything but reading.
+- **The suite is checked by mutation, not just by passing.** Breaking one
+  decision at a time (drop a guard, invert a sort, widen a filter) must turn
+  it red; a change that survives is a line the tests only watch. Coverage sits
+  at ~95%, and the rest is mostly `except OSError` and cross-device `move`
+  fallbacks. When adding a rule here, ask what single edit would defeat it and
+  make sure some test names that.
+- Two known-equivalent shapes, so nobody chases them: `--already-moved`'s
+  `src == dst` (unreachable — dst must exist and src must be gone) and
+  `--extract`'s `not dst` half of the `--no-browse` check (after the
+  lone-positional swap, a set src implies a set dst). Both are kept as
+  statements of intent and both say so in place.
 - The conformance layer is the early-warning system for Claude Code changing
   its on-disk format. If it starts failing, the format moved — fix the tool,
   not the test.
 - When changing path handling, add the case to `TestPathForms`: every spelling
   of one folder must migrate identically.
+- **Fixtures write compact JSON** (`jsonl()` in the test file), because that is
+  what Claude writes and because ccfind reads the cwd out with a regex that
+  assumes no space after the colon. A prettier fixture is invisible to it, and
+  the cross-source test silently stops proving anything.
+- Touching `--extract`? The three deliberate non-actions — no `cwd` rewrite,
+  no config entry, no folder move — are load-bearing, each with a test naming
+  the reason. If one starts looking like an oversight, read the test before
+  "fixing" it.
 - New output goes through `c()` / `emsg()` / `wmsg()`, never a raw escape. A
   test parses the call sites and fails on a style name `_SGR` doesn't define —
   `c()` indexes it directly, so a typo is a `KeyError` on a terminal that the

@@ -16,8 +16,10 @@
 # keep them roughly in sync. Three differences worth knowing:
 #
 #   * claude-mv has no porcelain — every line it prints is a human-facing
-#     report — so all three images are plain SGR capture. There is no
-#     screen-scraping and no stubbed dependency; the tool needs neither.
+#     report — so every image is plain SGR capture. There is no screen-scraping
+#     and no stubbed dependency: --extract has two optional helpers (ccfind,
+#     fzf), and its scene pins both to their absent form, which is the shape
+#     that needs no stub and renders the same on any machine.
 #   * bold is rendered as font-weight, not just the bright palette. claude-mv
 #     leans on bold to pick out the identifier in a line (`did rewrite cwd in
 #     **3** session file(s)`), which the siblings' colour-only mapping would
@@ -25,11 +27,14 @@
 #   * the three emoji claude-mv prints need real cell widths and whole
 #     grapheme clusters, neither of which the siblings' grid models — see
 #     run_tspans() below.
-#   * two screens end in an interactive prompt. The tool writes the prompt
-#     without a trailing newline and a piped stdin is never echoed, so the
-#     answer and the line break are missing from the capture; `answer()` puts
-#     both back. Those keystrokes are the only characters in these images that
-#     claude-mv did not itself emit.
+#   * several screens contain an interactive prompt — the extract guide is
+#     three of them on its own (folder, sessions, folder). The tool writes a
+#     prompt without a trailing newline and a piped stdin is never echoed, so
+#     the answer and the line break are missing from the capture; `answer()`
+#     puts them back, and `answer1()` does it one prompt at a time for the
+#     guide, whose two folder prompts read identically but are answered
+#     separately. Those keystrokes are the only characters in these images
+#     that claude-mv did not itself emit.
 #
 # The sandbox lives under a tmpdir, so its paths are long and machine-specific.
 # They are rewritten for display only — /Users/demo, plus the same rewrite
@@ -37,14 +42,14 @@
 # consistent with the paths beside them. Nothing else is touched.
 #
 # Usage:  zsh tools/generate-readme-svg.zsh
-#           → assets/{move,profiles,conflict,restore}-<hash>.svg, older ones
-#             deleted, README <img> references rewritten (the random hash busts
-#             GitHub's camo image cache). Commit all four files.
-#         zsh tools/generate-readme-svg.zsh MOVE.svg PROFILES.svg CONFLICT.svg RESTORE.svg
+#           → assets/{move,profiles,conflict,restore,sessions}-<hash>.svg, older
+#             ones deleted, README <img> references rewritten (the random hash
+#             busts GitHub's camo image cache). Commit all five files.
+#         zsh tools/generate-readme-svg.zsh MOVE.svg PROFILES.svg CONFLICT.svg RESTORE.svg SESSIONS.svg
 #           → fixed paths, README untouched.
 #
-# Regenerate whenever the migration report, the conflict prompt or the restore
-# screen changes. Restore-point stamps are real timestamps, so they track the
+# Regenerate whenever the migration report, the conflict prompt, the session
+# picker or the restore screen changes. Restore-point stamps are real timestamps, so they track the
 # day you run it — fine for a demo.
 # ---------------------------------------------------------------------------
 emulate -L zsh
@@ -135,6 +140,58 @@ seed() {  # a folder to move, with a nested project of its own, in two profiles
                "$fakehome/code/lipsum"
 }
 
+seed_session() {  # seed_session <profile> <cwd> <n> <prompt> <stamp> [later-cwd]
+  local prof=$1 cwd=$2 prompt=$4 stamp=$5 later=${6:-}
+  local id=$(fakeuuid $3) d="$prof/projects/${cwd//[^A-Za-z0-9]/-}"
+  mkdir -p "$d"
+  local f="$d/$id.jsonl"
+  # Real prompt text, because --extract puts the opening line of each
+  # conversation in the picker — four "(no prompt recorded)" rows would show
+  # the layout and none of the point.
+  print -r -- "{\"type\":\"user\",\"sessionId\":\"$id\",\"cwd\":\"$cwd\",\"message\":{\"role\":\"user\",\"content\":\"$prompt\"}}" > "$f"
+  # The turn recorded after the conversation cd'd into the folder it had just
+  # made. Only the picked session gets one; it is what makes this the shape
+  # --extract exists for rather than an ordinary list.
+  [[ -n $later ]] && \
+    print -r -- "{\"type\":\"user\",\"sessionId\":\"$id\",\"cwd\":\"$later\",\"message\":{\"role\":\"user\",\"content\":\"now wire up the decoder\"}}" >> "$f"
+  # Prompt-history entries carry the session that wrote them; re-keying just
+  # this session's is the thing the report's last line counts. A conversation
+  # that carried on in the new folder left more than one, so the count in the
+  # image is a count of something.
+  print -r -- "{\"display\":\"$prompt\",\"pastedContents\":{},\"project\":\"$cwd\",\"sessionId\":\"$id\"}" \
+    >> "$prof/history.jsonl"
+  [[ -n $later ]] && \
+    print -r -- "{\"display\":\"now wire up the decoder\",\"pastedContents\":{},\"project\":\"$cwd\",\"sessionId\":\"$id\"}" \
+      >> "$prof/history.jsonl"
+  touch -t "$stamp" "$f"          # <stamp> orders the picker, newest first
+}
+
+# The shape --extract exists for: several sessions homed in ~/code, one of
+# which had an idea, made a folder mid-conversation and kept working inside
+# it. Its history is stranded on ~/code — but so is everyone else's, and
+# theirs belongs there, which is why moving the whole folder's history is the
+# wrong tool and picking one session is the right one.
+seed_sessions() {
+  rm -rf "$fakehome"
+  mkdir -p "$fakehome/code/lipsum/src"
+  local prof="$fakehome/.claude"
+  # Config + a base history first: seed_profile truncates history.jsonl, so
+  # the per-session entries have to be laid down after it.
+  seed_profile "$prof" "$fakehome/.claude.json" "$fakehome/code"
+  : > "$prof/history.jsonl"
+  # Big seeds so fakeuuid's %08x reads like a session id rather than a
+  # counter — these end up in the picker, where 00000004 would look fake.
+  seed_session "$prof" "$fakehome/code" 3872015300 \
+    'draft a tool that recovers images from the app cache' 202608141405 \
+    "$fakehome/code/lipsum"
+  seed_session "$prof" "$fakehome/code" 2843017391 \
+    'which of these repos still target node 18?'          202608131152
+  seed_session "$prof" "$fakehome/code" 3387281044 \
+    'compare the two encoder branches'                    202608120931
+  seed_session "$prof" "$fakehome/code" 1749306622 \
+    'clean up the stale worktrees'                        202608110847
+}
+
 # What makes the move a conflict: the target path already hosted sessions of
 # its own — the everyday case for --already-moved, where you kept working in
 # the renamed folder before reconciling.
@@ -174,6 +231,15 @@ answer() {  # answer <blob> <prompt> <typed>
   print -rn -- "${1//$~pq/$rep}"
 }
 
+# answer(), but only the FIRST occurrence — the extract guide asks for a
+# directory twice, and the two prompts are answered separately.
+answer1() {  # answer1 <blob> <prompt> <typed>
+  local p=$'\e[1m'$2$'\e[0m' pq rep
+  pq=${(b)p}
+  rep=$p$'\e[1;32m'$3$'\e[0m'$'\n'
+  print -rn -- "${1/$~pq/$rep}"
+}
+
 cmdline() { print -rn -- $'\e[2m%\e[0m '$'\e[1m'"$1"$'\e[0m' }
 
 # ---- capture the real output ----------------------------------------------
@@ -210,11 +276,34 @@ restore_list=$(demoize "$(${=cm} --restore 2>&1)")
 restore_run=$(CLAUDE_MV_FORCE_PROMPT=1 ${=cm} --restore latest 2>&1 <<< 'y')
 restore_run=$(demoize "$(answer "$restore_run" 'restore? [y/N]: ' y)")
 
+# 5. moving SESSIONS rather than a folder: the project that was born
+#    mid-conversation in ~/code. The whole three-step guide — which folder,
+#    which sessions, where to — since that flow IS the feature; the flags a
+#    scripted run would use are in the README beside it.
+#
+#    Both helpers are pinned to their absent form (the no-fzf prompt, the
+#    filesystem walk): it is what a machine without them gets, it needs no
+#    stub, and it renders identically on a machine that has them.
+#
+#    Two bare Enters take the offered directories and `1` picks the session
+#    that wandered — the paths are passed so the prompts have something to
+#    offer, which is also how a real run seeds them.
+seed_sessions
+sessions_out=$(CLAUDE_MV_FORCE_PROMPT=1 CLAUDE_MV_PICKER=plain \
+               CLAUDE_MV_SOURCE=fs ${=cm} --profile "$fakehome/.claude" \
+                 --extract "$fakehome/code" "$fakehome/code/lipsum" 2>&1 \
+                 <<< $'\n1\n\n')
+sessions_out=$(answer1 "$sessions_out" 'directory: ' '')
+sessions_out=$(answer  "$sessions_out" 'selection: ' 1)
+sessions_out=$(demoize "$(answer1 "$sessions_out" 'directory: ' '')")
+
 [[ -n $move_out && -n $profiles_out && -n $conflict_out && -n $restore_move \
-   && -n $restore_list && -n $restore_run ]] || {
+   && -n $restore_list && -n $restore_run && -n $sessions_out ]] || {
   print -u2 "generate-readme-svg: sandbox produced no output — aborting"; exit 1 }
 [[ $move_out == *"done"* ]] || {
   print -u2 "generate-readme-svg: the move did not succeed — aborting"; exit 1 }
+[[ $sessions_out == *"done"* ]] || {
+  print -u2 "generate-readme-svg: the session move did not succeed — aborting"; exit 1 }
 
 # ---- SVG ------------------------------------------------------------------
 # Catppuccin Mocha chrome + the siblings' ANSI palette, so the four repos'
@@ -226,6 +315,7 @@ ANSI_N=('#000000' '#b43c2a' '#00c200' '#c7c400' '#0225c7' '#ca30c7' '#00c5c7' '#
 ANSI_B=('#686868' '#dd7975' '#58e790' '#ece100' '#6871ff' '#ff77ff' '#60fdff' '#ffffff')
 FONT="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace"
 integer FS=13 LH=20 TH=30 PX=20 PY=14 SLACK=24 MINCOLS=52
+local -F REVEAL=2.4      # seconds any image may spend revealing itself
 
 # Terminal grid: every character is pinned to its own cell, so a row occupies
 # exactly (columns × cw) whichever font the renderer falls back to — which is
@@ -358,10 +448,52 @@ emit_svg() {
     print -r -- "  <rect y=\"$(( TH - 6 ))\" width=\"$W\" height=\"6\" fill=\"$BAR\"/>"
     print -r -- "  <circle cx=\"18\" cy=\"$(( TH / 2 ))\" r=\"5.5\" fill=\"$DOT1\"/><circle cx=\"36\" cy=\"$(( TH / 2 ))\" r=\"5.5\" fill=\"$DOT2\"/><circle cx=\"54\" cy=\"$(( TH / 2 ))\" r=\"5.5\" fill=\"$DOT3\"/>"
     print -r -- "  <text x=\"$(( W / 2 ))\" y=\"$(( TH / 2 + 5 ))\" text-anchor=\"middle\" font-family=\"$FONT\" font-size=\"12\" fill=\"$DIMC\">$(xesc "$title")</text>"
+    # ---- the reveal ---------------------------------------------------------
+    # Lines fade in top to bottom, once, then stay. CSS rather than SMIL or
+    # script: GitHub renders a README image through <img>, which runs
+    # stylesheets and blocks scripts, so this is the only mechanism that
+    # actually animates there.
+    #
+    # The step shrinks as a screen gets longer, capping every image at REVEAL
+    # seconds — a reader who only wants the tally at the bottom should not be
+    # made to wait proportionally to how much output the command happened to
+    # produce. `both` holds each line hidden until its turn and visible after,
+    # and there is no iteration count, so the finished frame is what the image
+    # rests on rather than a loop restarting under the reader.
+    #
+    # Blank lines emit no element but still consume a slot, so the pauses in
+    # the pacing are the blank lines in the real output.
+    local -F step=$(( REVEAL / ${#_lines} ))
+    (( step > 0.06 )) && step=0.06
+    # step-end, not a fade: a terminal does not dissolve a line into being, it
+    # prints it. (The same reasoning ccfind's frame timeline documents — there
+    # a cross-fade ghosts one frame through another; here it would just make
+    # text that never behaves like text.) One stop, holding until it flips.
+    #
+    # No iteration count, so this runs once and rests on the finished screen.
+    # A looping reveal would keep blanking output someone is still reading,
+    # and the worst case of running once — a reader who arrives after it has
+    # played — is the static image this README had before.
+    print -r -- "  <style>"
+    print -r -- "    @keyframes cmv-in { from { opacity: 0 } to { opacity: 1 } }"
+    print -r -- "    text.l { animation: cmv-in 0.01s step-end both }"
+    # Motion is decoration here; the text is the content. Anyone who has asked
+    # the OS for less of it gets the finished screen immediately.
+    #
+    # A renderer that ignores <style> altogether needs nothing: with no
+    # animation applied these lines are simply opaque, which is the whole
+    # screen — the state worth falling back to. (ccfind has to set opacity="0"
+    # per frame for this, because its frames stack; a reveal does not.)
+    print -r -- "    @media (prefers-reduced-motion: reduce) {"
+    print -r -- "      text.l { animation: none; opacity: 1 }"
+    print -r -- "    }"
+    print -r -- "  </style>"
     integer i=0 y
+    local delay
     for line in "${_lines[@]}"; do
       y=$(( TH + PY + i * LH + FS ))
-      [[ -n $line ]] && print -r -- "  <text x=\"$PX\" y=\"$y\" font-family=\"$FONT\" font-size=\"$FS\" xml:space=\"preserve\" fill=\"$FG\">$(render_ansi "$line")</text>"
+      printf -v delay '%.2f' $(( i * step ))
+      [[ -n $line ]] && print -r -- "  <text class=\"l\" style=\"animation-delay:${delay}s\" x=\"$PX\" y=\"$y\" font-family=\"$FONT\" font-size=\"$FS\" xml:space=\"preserve\" fill=\"$FG\">$(render_ansi "$line")</text>"
       (( i++ ))
     done
     print -r -- "</svg>"
@@ -369,7 +501,9 @@ emit_svg() {
 }
 
 # ---- compose ---------------------------------------------------------------
-typeset -a move_lines profiles_lines conflict_lines restore_lines
+typeset -a move_lines profiles_lines conflict_lines restore_lines sessions_lines
+sessions_lines=("$(cmdline 'claude-mv --extract ~/code ~/code/lipsum')" ''
+                "${(@f)sessions_out}")
 move_lines=("$(cmdline 'claude-mv ~/code/lipsum ~/code/foo')" '' "${(@f)move_out}")
 profiles_lines=("$(cmdline 'claude-mv ~/code/lipsum ~/code/foo')" '' "${(@f)profiles_out}")
 conflict_lines=("$(cmdline 'claude-mv ~/code/lipsum ~/code/foo')" '' "${(@f)conflict_out}")
@@ -383,17 +517,20 @@ MOVE_ARIA='claude-mv moving a folder: a restore point is taken, the folder is mo
 PROFILES_ARIA='the same move on a machine with two Claude profiles and a nested project under the moved folder: both profiles are re-keyed in turn, each reporting its own project dirs, session files, config keys and history entries'
 CONFLICT_ARIA='claude-mv finding history already at the destination: the conflicting project dir and config key are listed, four resolution policies are offered, consolidate is chosen, and the merge is reported per store across both profiles'
 RESTORE_ARIA='an overwrite move keeping its restore point as the archive of the history it discarded, that point then listed by claude-mv --restore, and finally rolled back: the folder move-back and the number of dirs and files to restore are previewed, confirmed, and reported done'
+SESSIONS_ARIA='claude-mv moving one session rather than a folder: the four conversations homed in ~/code are listed newest first with their opening prompts, one is picked by number, and only that session — its transcript and its own history entries — is re-homed onto the folder it created, leaving the others where they are'
 
 if [[ -n ${1:-} ]]; then
   emit_svg move_lines     "$1" 'claude-mv' "$MOVE_ARIA";     print "wrote $1"
   [[ -n ${2:-} ]] && { emit_svg profiles_lines "$2" 'claude-mv' "$PROFILES_ARIA"; print "wrote $2" }
   [[ -n ${3:-} ]] && { emit_svg conflict_lines "$3" 'claude-mv' "$CONFLICT_ARIA"; print "wrote $3" }
   [[ -n ${4:-} ]] && { emit_svg restore_lines  "$4" 'claude-mv' "$RESTORE_ARIA";  print "wrote $4" }
+  [[ -n ${5:-} ]] && { emit_svg sessions_lines "$5" 'claude-mv' "$SESSIONS_ARIA"; print "wrote $5" }
 else
   mkdir -p "$root/assets"
   local old
   for old in "$root"/assets/move-*.svg(N) "$root"/assets/profiles-*.svg(N) \
-             "$root"/assets/conflict-*.svg(N) "$root"/assets/restore-*.svg(N); do
+             "$root"/assets/conflict-*.svg(N) "$root"/assets/restore-*.svg(N) \
+             "$root"/assets/sessions-*.svg(N); do
     rm -f "$old"
   done
   local hash; hash=$(xxd -l3 -p /dev/urandom)
@@ -401,6 +538,7 @@ else
   emit_svg profiles_lines "$root/assets/profiles-${hash}.svg" 'claude-mv' "$PROFILES_ARIA"
   emit_svg conflict_lines "$root/assets/conflict-${hash}.svg" 'claude-mv' "$CONFLICT_ARIA"
   emit_svg restore_lines  "$root/assets/restore-${hash}.svg"  'claude-mv' "$RESTORE_ARIA"
+  emit_svg sessions_lines "$root/assets/sessions-${hash}.svg" 'claude-mv' "$SESSIONS_ARIA"
   # `profiles` before `move`: the move pattern would otherwise also match the
   # tail of a profiles-*.svg reference and rewrite it to the wrong name.
   sed -i.bak \
@@ -408,6 +546,7 @@ else
     -e "s|assets/move-[^)\"]*\.svg|assets/move-${hash}.svg|" \
     -e "s|assets/conflict-[^)\"]*\.svg|assets/conflict-${hash}.svg|" \
     -e "s|assets/restore-[^)\"]*\.svg|assets/restore-${hash}.svg|" \
+    -e "s|assets/sessions-[^)\"]*\.svg|assets/sessions-${hash}.svg|" \
     "$root/README.md" && rm -f "$root/README.md.bak"
-  print "wrote assets/{move,profiles,conflict,restore}-${hash}.svg and updated README.md"
+  print "wrote assets/{move,profiles,conflict,restore,sessions}-${hash}.svg and updated README.md"
 fi
