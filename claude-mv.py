@@ -779,6 +779,105 @@ def build_plan(profile: str, old: str, new: str) -> dict:
     return plan
 
 
+def stranded_tally(plans: list[dict], src: str, dst: str) -> dict:
+    """What is still keyed on `src`, counted in the report's own counters.
+
+    The same numbers the run would close with, gathered before it starts —
+    including the history entries, counted by asking the rewriter for a dry
+    run rather than by a second reading of the same rule.
+    """
+    t = new_tally()
+    for plan in plans:
+        for d, _ in plan["dir_moves"] + plan["dir_conflicts"]:
+            t["dirs"] += 1
+            try:
+                t["sessions"] += sum(1 for n in os.listdir(d)
+                                     if n.endswith(".jsonl"))
+            except OSError:
+                pass
+        t["keys"] += len(plan["key_moves"]) + len(plan["key_conflicts"])
+        if plan["hist"]:
+            t["history"] += rewrite_jsonl_field(plan["hist"], "project",
+                                                src, dst, dry_run=True)
+    return t
+
+
+def moved_folder_at(src: str, dst: str) -> str:
+    """Where the folder that used to be `src` is now, given `dst`.
+
+    `mv old new` and `mv old somewhere/` are the same command with different
+    intent, and once `old` is gone only the disk can say which one happened.
+    If there is a folder of src's name sitting inside dst, that is the
+    mv-into-a-directory reading and the one a plain `mv` would have produced;
+    otherwise dst is the new name.
+    """
+    inside = os.path.join(dst, os.path.basename(src))
+    return os.path.realpath(inside if os.path.isdir(inside) else dst)
+
+
+def offer_reconcile(src: str, dst: str, profiles: list[str], args) -> bool:
+    """`src` is gone and `dst` is here: offer to re-key what was left behind.
+
+    The folder move and --already-moved are one migration with different
+    amounts of it already done, and which one applies is a fact about the disk
+    rather than a decision the user should have to make twice. So when the
+    disk says the move already happened, say what is stranded and ask —
+    rather than refusing and naming a flag to retype the command with.
+
+    Only when something IS stranded. A src that never had history is a
+    mistyped path, and offering to migrate nothing would dress a typo up as a
+    plan. True to carry on as --already-moved; False when the caller should
+    give up, having said why.
+    """
+    err = sys.stderr
+    plans = [build_plan(p, src, dst) for p in profiles]
+    if not any(p["dir_moves"] or p["dir_conflicts"] or p["key_moves"]
+               or p["key_conflicts"] for p in plans):
+        print(emsg(f"src is not a directory: "
+                   f"{c(src, 'cyan', stream=err)}\n  "
+                   f"{c(dst, 'cyan', stream=err)} is there, but no Claude "
+                   f"history is keyed on {c(src, 'cyan', stream=err)} — "
+                   f"nothing to re-key"), file=err)
+        return False
+
+    stranded = summarize(stranded_tally(plans, src, dst))
+    print(wmsg(c(f"{src} is not there, but {dst} is — "
+                 f"the folder looks moved already", "bold")))
+    print(c("   still keyed on the old path: ", "dim") + c(stranded, "bold"))
+    print(c("   claude-mv can finish the job: move nothing, re-key that "
+            "history onto", "dim") + " " + c(dst, "cyan"))
+
+    if args.dry_run:
+        print(c("   (dry run — previewing what --already-moved would do)",
+                "dim"))
+        return True
+    if args.force:
+        return True
+    if not can_prompt():
+        # Not a refusal to work, a refusal to guess: on a pipe there is nobody
+        # to ask, and re-keying history onto a path nobody confirmed is the
+        # one thing this tool will not do quietly.
+        # Repeats the finding rather than pointing at it: the report above
+        # went to stdout, and a run redirected into a log is one where stderr
+        # is the only half anybody reads.
+        print(emsg(f"{c(src, 'cyan', stream=err)} is gone, "
+                   f"{c(dst, 'cyan', stream=err)} is here, and "
+                   f"{c(stranded, 'bold', stream=err)} are still keyed on the "
+                   f"old path — confirmation needed.\n  Rerun from a tty, or "
+                   f"say it outright:  claude-mv --already-moved "
+                   f"{c(src, 'cyan', stream=err)} "
+                   f"{c(dst, 'cyan', stream=err)}"), file=err)
+        return False
+    try:
+        if input(c(f"re-key it onto {dst}? [y/N]: ", "bold")) \
+                .strip().lower() in ("y", "yes"):
+            return True
+    except EOFError:
+        pass
+    print(c("cancelled — nothing was changed", "yellow"))
+    return False
+
+
 def print_conflicts(plans: list[dict]) -> None:
     print("\n" + wmsg(c("destination Claude history already exists:", "bold")))
     for plan in plans:
@@ -2174,6 +2273,24 @@ def main() -> int:
 
     src = canonical(args.src)
     dst = canonical(args.dst)
+
+    # Resolved before the paths are judged, because whether a missing src is
+    # an error or a job half done is a question only the profiles can answer.
+    profiles = [p for p in args.profile if os.path.isdir(p)]
+    if not profiles:
+        print(emsg("no existing --profile dirs given"), file=sys.stderr)
+        return 1
+
+    # The folder is gone and the destination is here: the move already
+    # happened somewhere else, and what is left is the half claude-mv can
+    # still do. Offer it rather than refuse and name a flag to retype with.
+    if not args.already_moved and not os.path.isdir(src) \
+            and os.path.isdir(dst):
+        dst = moved_folder_at(src, dst)
+        if not offer_reconcile(src, dst, profiles, args):
+            return 1
+        args.already_moved = True
+
     if args.already_moved:
         # Reconcile-only: the move already happened elsewhere. Both ends are
         # inverted vs. a real move — the old path must be gone, the new one
@@ -2190,7 +2307,10 @@ def main() -> int:
                   file=sys.stderr)
             return 1
         # The folder is already living here, so sessions started in it record
-        # the fully physical path — resolve the last component too.
+        # the fully physical path — resolve the last component too. A dst the
+        # offer above settled is already physical, so this is a no-op there;
+        # a dst the user typed with the flag is taken as typed, mv-into
+        # guesswork included, because with the flag they said which it is.
         dst = os.path.realpath(dst)
         # Unreachable by construction, and kept as the statement of intent:
         # dst has to exist to get here and src has to be gone, so the two
@@ -2229,11 +2349,6 @@ def main() -> int:
                        f"{c(os.path.dirname(dst), 'cyan', stream=sys.stderr)}"),
                   file=sys.stderr)
             return 1
-
-    profiles = [p for p in args.profile if os.path.isdir(p)]
-    if not profiles:
-        print(emsg("no existing --profile dirs given"), file=sys.stderr)
-        return 1
 
     # With --already-moved the destination is live already, so a session
     # running there is writing to a project dir this run may merge into.

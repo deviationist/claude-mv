@@ -827,6 +827,122 @@ class TestPlainMove(FixtureCase):
         self.assertIn("--already-moved", r.stderr)
 
 
+# ── the offer: a folder that is already gone ────────────────────────────────
+
+class TestOfferedReconcile(FixtureCase):
+    """`claude-mv old new` when `old` is already gone and `new` is there.
+
+    The plain move and --already-moved are one migration with different
+    amounts of it already done, and the disk knows which. Rather than refuse
+    and name a flag, the run says what is stranded and asks — so the tool can
+    do the whole job or just the half that is left, from the same command.
+    """
+
+    PROMPT = {"CLAUDE_MV_FORCE_PROMPT": "1"}
+
+    def setUp(self):
+        super().setUp()
+        self.old = os.path.join(self.code, "lipsum")     # never created
+        self.new = self.make_folder("foo")
+        self.make_project(self.old, sessions=("aaaa-1111", "bbbb-2222"))
+        self.make_project(os.path.join(self.old, "api"),
+                          sessions=("cccc-3333",))
+        self.add_config(self.old)
+        self.add_history(self.old)
+        self.write_fixture()
+
+    def keyed_dirs(self):
+        return [d for d in self.project_dirs() if cm.enc(self.new) in d]
+
+    def test_the_offer_says_what_is_stranded(self):
+        r = self.run_mv(self.old, self.new, stdin="n\n",
+                        env_extra=self.PROMPT, expect=1)
+        self.assertIn("looks moved already", r.stdout)
+        self.assertIn("2 project dirs", r.stdout)     # lipsum and lipsum/api
+        self.assertIn("3 session files", r.stdout)
+        self.assertIn("1 config key", r.stdout)
+        self.assertIn("1 history entry", r.stdout)
+
+    def test_declining_changes_nothing(self):
+        r = self.run_mv(self.old, self.new, stdin="n\n",
+                        env_extra=self.PROMPT, expect=1)
+        self.assertIn("cancelled", r.stdout)
+        self.assertEqual(self.keyed_dirs(), [])
+        self.assertEqual(self.restore_stamps(), [])
+
+    def test_accepting_re_keys_the_history_and_moves_no_folder(self):
+        self.run_mv(self.old, self.new, stdin="y\n", env_extra=self.PROMPT)
+        self.assertEqual(sorted(self.keyed_dirs()),
+                         sorted([cm.enc(self.new),
+                                 cm.enc(os.path.join(self.new, "api"))]))
+        self.assertIn(self.new, self.read_config()["projects"])
+        self.assertFalse(os.path.exists(self.old))    # nothing was created
+        self.assertTrue(os.path.isdir(self.new))
+
+    def test_end_of_input_is_not_consent(self):
+        self.run_mv(self.old, self.new, env_extra=self.PROMPT, expect=1)
+        self.assertEqual(self.keyed_dirs(), [])
+
+    def test_a_pipe_is_told_what_to_say_rather_than_guessed_at(self):
+        """No tty is nobody to ask, and re-keying history onto a path nobody
+        confirmed is the one thing this tool will not do quietly. The stderr
+        half has to carry the finding: a run redirected into a log is one
+        where stdout is not read."""
+        r = self.run_mv(self.old, self.new, expect=1)
+        self.assertIn("confirmation needed", r.stderr)
+        self.assertIn("3 session files", r.stderr)
+        self.assertIn(f"--already-moved {self.old} {self.new}", r.stderr)
+        self.assertEqual(self.keyed_dirs(), [])
+
+    def test_force_is_taken_as_the_answer(self):
+        self.run_mv("--force", self.old, self.new)
+        self.assertIn(cm.enc(self.new), self.project_dirs())
+
+    def test_a_dry_run_previews_it_without_asking(self):
+        r = self.run_mv("-n", self.old, self.new, env_extra=self.PROMPT)
+        self.assertIn("dry run", r.stdout)
+        self.assertNotIn("[y/N]", r.stdout)
+        self.assertEqual(self.keyed_dirs(), [])
+
+    def test_nothing_stranded_is_a_typo_not_an_offer(self):
+        """A src that never had history is a mistyped path. Offering to
+        migrate nothing would dress that up as a plan."""
+        r = self.run_mv(os.path.join(self.code, "never-existed"), self.new,
+                        env_extra=self.PROMPT, expect=1)
+        self.assertIn("no Claude history is keyed on", r.stderr)
+        self.assertNotIn("[y/N]", r.stdout)
+
+    def test_with_no_destination_either_it_is_just_a_missing_folder(self):
+        """The offer needs somewhere to re-key ONTO. Without that there is
+        nothing to propose, so the old hint stands."""
+        r = self.run_mv(self.old, os.path.join(self.code, "nope"),
+                        env_extra=self.PROMPT, expect=1)
+        self.assertIn("--already-moved", r.stderr)
+        self.assertNotIn("looks moved already", r.stdout)
+
+    def test_a_folder_moved_INTO_a_directory_is_read_that_way(self):
+        """`mv old somewhere/` and `mv old new` are the same command with
+        different intent, and once old is gone only the disk can say which
+        happened. A folder of src's name sitting inside dst is the mv-into
+        reading — and the path the history has to land on."""
+        archive = self.make_folder("archive")
+        landed = os.path.join(archive, "lipsum")
+        os.makedirs(landed)
+        r = self.run_mv(self.old, archive, stdin="y\n", env_extra=self.PROMPT)
+        self.assertIn(landed, r.stdout)
+        self.assertIn(cm.enc(landed), self.project_dirs())
+        self.assertNotIn(cm.enc(archive), self.project_dirs())
+
+    def test_the_flag_still_takes_the_destination_as_typed(self):
+        """--already-moved is the user saying which reading is right, so the
+        mv-into guess must not second-guess them."""
+        os.makedirs(os.path.join(self.new, "lipsum"))
+        self.run_mv("--already-moved", self.old, self.new)
+        self.assertIn(cm.enc(self.new), self.project_dirs())
+        self.assertNotIn(cm.enc(os.path.join(self.new, "lipsum")),
+                         self.project_dirs())
+
+
 # ── end-to-end: how src/dst are spelled ─────────────────────────────────────
 
 class TestFolderConflicts(FixtureCase):

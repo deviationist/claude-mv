@@ -65,14 +65,43 @@ folder lands *inside* it. `~`, relative paths and trailing slashes all work.
 The common case: you renamed the folder in an editor, kept working, and only
 then noticed the history didn't follow.
 
+**You can just run the move.** If the folder you named is gone and the one you
+named as the destination is there, that is not a mistyped path — it is this
+job with the first half already done. claude-mv says what it found and offers
+to finish it:
+
+```
+⚠️  ~/code/old-name is not there, but ~/code/new-name is — the folder looks moved already
+   still keyed on the old path: 2 project dirs · 7 session files · 1 config key · 12 history entries
+   claude-mv can finish the job: move nothing, re-key that history onto ~/code/new-name
+re-key it onto ~/code/new-name? [y/N]:
+```
+
+Answer `n` and nothing has been touched. If **nothing** is keyed on the old
+path there is no offer, because then it really is just a mistyped path and
+proposing to migrate nothing would dress that up as a plan. On a pipe there is
+nobody to ask, so the run stops and says what to type instead — re-keying
+history onto a path nobody confirmed is the one thing this tool won't do
+quietly.
+
+Saying it outright does the same thing without the question:
+
 ```sh
 claude-mv --already-moved ~/code/old-name ~/code/new-name
 ```
 
 Nothing is moved; only the history is re-keyed. The old path can't be
 recovered from the encoded directory name (the encoding is lossy), so it has
-to be given explicitly. Sessions started in the renamed folder before you
-reconcile are normal — that's a conflict, and `consolidate` keeps both sides.
+to be given explicitly either way. Sessions started in the renamed folder
+before you reconcile are normal — that's a conflict, and `consolidate` keeps
+both sides.
+
+One difference between the two: `mv old new` and `mv old somewhere/` are the
+same command with different intent, and once `old` is gone only the disk can
+say which one happened. The offer looks — a folder of `old`'s name sitting
+inside the destination means it was moved *into* it, and the history is
+re-keyed onto **that** path. With the flag you have said which reading is
+right, so the destination is taken exactly as typed.
 
 ### The project that was born mid-session
 
@@ -460,7 +489,9 @@ Ten layers, each closing a gap the previous ones can't see:
    escapes, what the tally says, which policy an answer selects), and how a
    picker selection parses. On the decisions, never on the escape codes.
 2. **End-to-end** — a throwaway profile in a tmpdir, claude-mv run as a real
-   subprocess, assertions on the resulting disk state.
+   subprocess, assertions on the resulting disk state. Including the offer a
+   missing `src` triggers: what it counts, that declining and a pipe both
+   change nothing, and that a src with no history gets no offer at all.
 3. **Multi-profile** — several profiles in one run, in the two config layouts
    a real machine mixes (`~/.claude.json` for the default profile, an
    in-dir `.claude.json` for the rest). Layer 2 passes exactly one

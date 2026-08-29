@@ -21,6 +21,20 @@ Code history so `claude --resume` still finds the sessions at the new path.
   nothing, re-key the history stranded on the old path. `src` must be gone,
   `dst` must exist. The old path can't be derived from the encoded dir name —
   it must be given.
+- **A plain move whose `src` is gone offers the reconcile rather than refusing
+  it.** The two are one migration with different amounts already done, and
+  which applies is a fact about the disk, not a decision to make twice — so
+  when `src` is missing and `dst` is a directory, the run reports what is
+  still keyed on the old path (`stranded_tally()`, the report's own counters,
+  history entries counted by asking `rewrite_jsonl_field` for a dry run) and
+  asks. Three rules hold it honest: **nothing stranded means no offer** (that
+  is a mistyped path, and proposing to migrate nothing dresses a typo up as a
+  plan); **no tty means no** — the finding is repeated on stderr with the
+  exact `--already-moved` command, because a redirected run is one where only
+  stderr is read; and `--force`/`-n` answer for themselves. `moved_folder_at()`
+  settles `mv old new` vs `mv old somewhere/` by looking for a folder of src's
+  name inside dst — **inference for the offer only**, never for an explicit
+  `--already-moved`, where the user has said which reading is right.
 - **`--extract`** moves individual *sessions* instead of a folder — for the
   project born mid-session in a parent dir (you were in `~/code`, told Claude
   to `mkdir` and `cd`, and the whole conversation stayed keyed on `~/code`).
