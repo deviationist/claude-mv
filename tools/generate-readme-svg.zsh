@@ -47,10 +47,10 @@
 # consistent with the paths beside them. Nothing else is touched.
 #
 # Usage:  zsh tools/generate-readme-svg.zsh
-#           → assets/{move,profiles,conflict,restore,sessions,picker}-<hash>.svg,
+#           → assets/{move,profiles,conflict,restore,sessions,picker,search}-<hash>.svg,
 #             older ones deleted, README <img> references rewritten (the random
-#             hash busts GitHub's camo image cache). Commit all six files.
-#         zsh tools/generate-readme-svg.zsh MOVE.svg PROFILES.svg CONFLICT.svg RESTORE.svg SESSIONS.svg
+#             hash busts GitHub's camo image cache). Commit all seven files.
+#         zsh tools/generate-readme-svg.zsh MOVE.svg PROFILES.svg CONFLICT.svg RESTORE.svg SESSIONS.svg SEARCH.svg
 #           → fixed paths, README untouched (the picker scene is file-mode only
 #             via the default path).
 #
@@ -198,6 +198,39 @@ seed_sessions() {
     'clean up the stale worktrees'                        202608110847
 }
 
+# One more turn in a session that already exists: the reply --search finds
+# when the opening line the picker shows says nothing about it. Re-stamps the
+# file, because appending to it would otherwise reorder the picker.
+seed_reply() {  # seed_reply <profile> <cwd> <n> <stamp> <text>
+  local id=$(fakeuuid $3) d="$1/projects/${2//[^A-Za-z0-9]/-}"
+  print -r -- "{\"type\":\"assistant\",\"sessionId\":\"$id\",\"cwd\":\"$2\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"$5\"}]}}" \
+    >> "$d/$id.jsonl"
+  touch -t "$4" "$d/$id.jsonl"
+}
+
+# The shape --search exists for: you remember what the conversation was about
+# and not which folder you were standing in. Two of the six sessions in the
+# tree mention it — one in a reply the picker never showed, one in its opening
+# line — and the one that matters was never homed in ~/code at all.
+seed_search() {
+  seed_sessions                     # the four homed in ~/code, then:
+  local prof="$fakehome/.claude"
+  mkdir -p "$fakehome/code/scratch"
+  # The one whose opening line says nothing about it — the row that only
+  # exists because the search read past the line the picker had.
+  seed_session "$prof" "$fakehome/code" 3559024187 \
+    'recover the app-cache images'                        202608141420
+  seed_reply   "$prof" "$fakehome/code" 3559024187 202608141420 \
+    'image recovery chokes on HEIC'
+  # And the one that was never homed in ~/code at all, which is what -R is
+  # for. Deliberately short: every row here is drawn into an SVG whose width
+  # is its longest line, and this scene already carries two extra columns.
+  seed_session "$prof" "$fakehome/code/scratch" 2201884473 \
+    'image recovery notes from the dump'                  202608131340
+  seed_session "$prof" "$fakehome/code/scratch" 4130552918 \
+    'try the ffmpeg flags on the sample'                  202608101612
+}
+
 # fzf cannot be captured. It draws with terminal control sequences on a screen
 # it takes over, so there is nothing on stdout to pipe — which is why ccfind
 # reconstructs its picker rather than recording it, and why this does too.
@@ -341,10 +374,26 @@ seed_sessions
 sessions_out=$(CLAUDE_MV_FORCE_PROMPT=1 CLAUDE_MV_PICKER=plain \
                CLAUDE_MV_SOURCE=fs ${=cm} --profile "$fakehome/.claude" \
                  --extract "$fakehome/code" "$fakehome/code/lipsum" 2>&1 \
-                 <<< $'\n1\n\n')
+                 <<< $'\n1\n\ny\n')
 sessions_out=$(answer1 "$sessions_out" 'directory: ' '')
 sessions_out=$(answer  "$sessions_out" 'selection: ' 1)
-sessions_out=$(demoize "$(answer1 "$sessions_out" 'directory: ' '')")
+sessions_out=$(answer1 "$sessions_out" 'directory: ' '')
+# The survey page is the fourth answer: the guide restates the whole decision
+# and waits, so the scene has to type the y that a person would.
+sessions_out=$(demoize "$(answer "$sessions_out" 'proceed? [y/N]: ' y)")
+
+# 7. finding the conversation rather than the folder: --search over the
+#    transcript bodies, -R over the whole tree. --no-browse here on purpose —
+#    the browse is already the subject of the scene above, and what this one
+#    is about is the list the search leaves behind: the folder column that a
+#    recursive scope adds, and the matching line beside the opening one.
+seed_search
+search_out=$(CLAUDE_MV_FORCE_PROMPT=1 CLAUDE_MV_PICKER=plain \
+             CLAUDE_MV_SOURCE=fs ${=cm} --profile "$fakehome/.claude" \
+               --extract -R --no-browse --search 'image recovery' \
+               "$fakehome/code" "$fakehome/code/lipsum" 2>&1 <<< $'2\ny\n')
+search_out=$(answer "$search_out" 'selection: ' 2)
+search_out=$(demoize "$(answer "$search_out" 'proceed? [y/N]: ' y)")
 
 # 6. the same step with fzf installed, which is what most people get. The
 #    scene above deliberately pins the no-fzf fallback so it stays hermetic and
@@ -365,12 +414,15 @@ picker_lines=("$(cmdline_typed 'claude-mv --extract')" ''
               '' "${picker_lines[@]}")
 
 [[ -n $move_out && -n $profiles_out && -n $conflict_out && -n $restore_move \
-   && -n $restore_list && -n $restore_run && -n $sessions_out ]] || {
+   && -n $restore_list && -n $restore_run && -n $sessions_out \
+   && -n $search_out ]] || {
   print -u2 "generate-readme-svg: sandbox produced no output — aborting"; exit 1 }
 [[ $move_out == *"done"* ]] || {
   print -u2 "generate-readme-svg: the move did not succeed — aborting"; exit 1 }
 [[ $sessions_out == *"done"* ]] || {
   print -u2 "generate-readme-svg: the session move did not succeed — aborting"; exit 1 }
+[[ $search_out == *"done"* && $search_out == *"./scratch/"* ]] || {
+  print -u2 "generate-readme-svg: the search scene found nothing — aborting"; exit 1 }
 
 # ---- SVG ------------------------------------------------------------------
 # Catppuccin Mocha chrome + the siblings' ANSI palette, so the four repos'
@@ -661,6 +713,9 @@ emit_svg() {
 
 # ---- compose ---------------------------------------------------------------
 typeset -a move_lines profiles_lines conflict_lines restore_lines sessions_lines
+typeset -a search_lines
+search_lines=("$(cmdline_typed "claude-mv --extract -R --no-browse --search 'image recovery' ~/code ~/code/lipsum")"
+              '' "${(@f)search_out}")
 sessions_lines=("$(cmdline_typed 'claude-mv --extract ~/code ~/code/lipsum')" ''
                 "${(@f)sessions_out}")
 move_lines=("$(cmdline_typed 'claude-mv ~/code/lipsum ~/code/foo')" '' "${(@f)move_out}")
@@ -677,6 +732,7 @@ PROFILES_ARIA='the same move on a machine with two Claude profiles and a nested 
 CONFLICT_ARIA='claude-mv finding history already at the destination: the conflicting project dir and config key are listed, four resolution policies are offered, consolidate is chosen, and the merge is reported per store across both profiles'
 RESTORE_ARIA='an overwrite move keeping its restore point as the archive of the history it discarded, that point then listed by claude-mv --restore, and finally rolled back: the folder move-back and the number of dirs and files to restore are previewed, confirmed, and reported done'
 PICKER_ARIA='the same step on a machine with fzf installed: claude-mv --extract typed at a prompt, the four sessions homed in ~/code listed inside an fzf picker with its prompt, match count and key hints, a pointer on the first row and a Tab marker on a second — the multi-select that lets more than one conversation move at once'
+SEARCH_ARIA='claude-mv finding a conversation by what was said in it: --search over the transcript bodies with -R over the whole tree leaves two of the six sessions on the list, each row carrying the folder it is homed in and, where the opening line does not already show it, the line that matched; one is picked, the survey page restates the whole move, and the session homed in a scratch folder is re-homed onto the project it belongs to'
 SESSIONS_ARIA='claude-mv moving one session rather than a folder: the four conversations homed in ~/code are listed newest first with their opening prompts, one is picked by number, and only that session — its transcript and its own history entries — is re-homed onto the folder it created, leaving the others where they are'
 
 if [[ -n ${1:-} ]]; then
@@ -685,12 +741,14 @@ if [[ -n ${1:-} ]]; then
   [[ -n ${3:-} ]] && { emit_svg conflict_lines "$3" 'claude-mv' "$CONFLICT_ARIA"; print "wrote $3" }
   [[ -n ${4:-} ]] && { emit_svg restore_lines  "$4" 'claude-mv' "$RESTORE_ARIA";  print "wrote $4" }
   [[ -n ${5:-} ]] && { emit_svg sessions_lines "$5" 'claude-mv' "$SESSIONS_ARIA"; print "wrote $5" }
+  [[ -n ${6:-} ]] && { emit_svg search_lines   "$6" 'claude-mv' "$SEARCH_ARIA";   print "wrote $6" }
 else
   mkdir -p "$root/assets"
   local old
   for old in "$root"/assets/move-*.svg(N) "$root"/assets/profiles-*.svg(N) \
              "$root"/assets/conflict-*.svg(N) "$root"/assets/restore-*.svg(N) \
-             "$root"/assets/sessions-*.svg(N) "$root"/assets/picker-*.svg(N); do
+             "$root"/assets/sessions-*.svg(N) "$root"/assets/picker-*.svg(N) \
+             "$root"/assets/search-*.svg(N); do
     rm -f "$old"
   done
   local hash; hash=$(xxd -l3 -p /dev/urandom)
@@ -700,6 +758,7 @@ else
   emit_svg restore_lines  "$root/assets/restore-${hash}.svg"  'claude-mv' "$RESTORE_ARIA"
   emit_svg sessions_lines "$root/assets/sessions-${hash}.svg" 'claude-mv' "$SESSIONS_ARIA"
   emit_svg picker_lines   "$root/assets/picker-${hash}.svg"   'claude-mv' "$PICKER_ARIA"
+  emit_svg search_lines   "$root/assets/search-${hash}.svg"   'claude-mv' "$SEARCH_ARIA"
   # `profiles` before `move`: the move pattern would otherwise also match the
   # tail of a profiles-*.svg reference and rewrite it to the wrong name.
   sed -i.bak \
@@ -709,6 +768,7 @@ else
     -e "s|assets/restore-[^)\"]*\.svg|assets/restore-${hash}.svg|" \
     -e "s|assets/sessions-[^)\"]*\.svg|assets/sessions-${hash}.svg|" \
     -e "s|assets/picker-[^)\"]*\.svg|assets/picker-${hash}.svg|" \
+    -e "s|assets/search-[^)\"]*\.svg|assets/search-${hash}.svg|" \
     "$root/README.md" && rm -f "$root/README.md.bak"
-  print "wrote assets/{move,profiles,conflict,restore,sessions,picker}-${hash}.svg and updated README.md"
+  print "wrote assets/{move,profiles,conflict,restore,sessions,picker,search}-${hash}.svg and updated README.md"
 fi

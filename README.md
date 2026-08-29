@@ -13,7 +13,7 @@ anywhere on disk.
 `claude-mv` does the `mv` **and** re-keys the history to match.
 
 <p align="center">
-  <img src="assets/move-76a106.svg" alt="claude-mv moving a folder: a restore point is taken, the folder is moved, and its Claude profile is re-keyed — the project dir renamed, session files rewritten, the config key and history entries updated — closing with a green done line and a tally">
+  <img src="assets/move-43c588.svg" alt="claude-mv moving a folder: a restore point is taken, the folder is moved, and its Claude profile is re-keyed — the project dir renamed, session files rewritten, the config key and history entries updated — closing with a green done line and a tally">
 </p>
 
 (The text is genuine output — `tools/generate-readme-svg.zsh` seeds a sandbox
@@ -39,7 +39,7 @@ Requires `python3` (stdlib only) and zsh. Optional per-machine config:
 
 ```
 claude-mv [-n|--dry-run] [--force] [--already-moved] [--on-conflict MODE] <src-dir> <dst>
-claude-mv --extract [--no-browse] [--session ID]... [--limit N] [<src-dir>] [<dst>]
+claude-mv --extract [--search TEXT] [-R] [--no-browse] [--session ID]... [--limit N] [<src-dir>] [<dst>]
 claude-mv --restore [<stamp>|latest]
 ```
 
@@ -51,6 +51,8 @@ claude-mv --restore [<stamp>|latest]
 | `--extract` | move individual *sessions* out of `src`'s history onto `dst`, rather than moving a folder |
 | `--no-browse` | with `--extract`: don't browse for the folders, take both as arguments (then both are required) |
 | `--session ID` | which session to move (repeatable); skips the session picker. An 8-character prefix is enough |
+| `--search TEXT` | with `--extract`: offer only the sessions whose **transcript** mentions `TEXT` — the whole conversation, not just its opening line |
+| `-R`, `--recursive` | with `--extract`: consider the sessions homed in `src` **and every folder below it** (default: that one folder) |
 | `--limit N` | how many sessions the picker offers (default 50) |
 | `--on-conflict MODE` | policy when the destination already has history: `overwrite`, `consolidate`, `rename-only`, `abort` (with `--extract`: `overwrite`, `skip`, `abort`) |
 | `--restore [stamp]` | list restore points, or roll one back |
@@ -108,7 +110,7 @@ the destination, since the source defaults to the current directory and the
 destination has no default at all.
 
 <p align="center">
-  <img src="assets/sessions-76a106.svg" alt="claude-mv moving one session rather than a folder: the four conversations homed in ~/code are listed newest first with their opening prompts, one is picked by number, and only that session — its transcript and its own history entries — is re-homed onto the folder it created, leaving the others where they are">
+  <img src="assets/sessions-43c588.svg" alt="claude-mv moving one session rather than a folder: the four conversations homed in ~/code are listed newest first with their opening prompts, one is picked by number, and only that session — its transcript and its own history entries — is re-homed onto the folder it created, leaving the others where they are">
 </p>
 
 That run is the no-`fzf` shape — a numbered list and one prompt — because it is
@@ -118,12 +120,77 @@ one: type to filter, `Tab` to mark more than one conversation, `Enter` to
 confirm.
 
 <p align="center">
-  <img src="assets/picker-76a106.svg" alt="the same step on a machine with fzf installed: claude-mv --extract typed at a prompt, the four sessions homed in ~/code listed inside an fzf picker with its prompt, match count and key hints, a pointer on the first row and a Tab marker on a second — the multi-select that lets more than one conversation move at once">
+  <img src="assets/picker-43c588.svg" alt="the same step on a machine with fzf installed: claude-mv --extract typed at a prompt, the four sessions homed in ~/code listed inside an fzf picker with its prompt, match count and key hints, a pointer on the first row and a Tab marker on a second — the multi-select that lets more than one conversation move at once">
 </p>
 
 It is sized to the list and runs `--reverse`, so it appears *under* the line
 that introduced it rather than taking over the terminal — the same shape
 [ccfind](https://github.com/deviationist/ccfind) uses for its picker.
+
+**Nothing happens until you say so.** Once the sessions and the destination
+are settled, the guide stops and shows you the whole decision on one page —
+which conversations, out of which folder, into which other one, and what a
+conflict at the far end will do to each — and asks. Answer anything but `y`
+and nothing has been written: no files moved, not even a restore point
+created. `--force` skips the page (and `-n` never gets that far), so a
+scripted run is unaffected — and so is a run on a pipe, which is never asked a
+question it could not answer.
+
+#### Finding the conversation, not the folder
+
+Three months later you do not remember which of forty conversations it was.
+You remember what it was *about*: the one where the image recovery went wrong.
+`--search` narrows the list to the sessions that actually say so:
+
+```sh
+claude-mv --extract --search "image recovery"
+```
+
+It searches the transcript bodies, not the opening lines the picker shows, so
+a conversation that only got to the point on turn forty is still found. The
+match is a **literal, case-insensitive substring** of a transcript line —
+several words are one phrase, in the order you typed them, not a regex and not
+an AND across words — and it runs against the raw record, so a path, a
+filename, an error message or something a tool printed counts just as much as
+something a person typed. Each row then carries the line that matched, beside
+the line the conversation opened with — unless the opening line already shows
+it, in which case there is nothing to add.
+
+Where [ccfind](https://github.com/deviationist/ccfind) is installed it does the
+matching (it greps with `-F`, which is where those semantics come from);
+where it is not, `claude-mv` reads the transcripts itself and matches
+identically. The suite pins the two against each other, so the same `--search`
+finds the same sessions on either machine.
+
+#### One folder, or the tree below it
+
+And if you are not sure which folder it started in either: by default
+`--extract` only looks at the sessions homed in the folder itself — that is
+the common case and the safe one — while `-R` widens it to that folder and
+everything below:
+
+```sh
+claude-mv --extract -R --search "image recovery" ~/code
+```
+
+Now the rows can come from several projects at once, so each one says which —
+and the conversation you were after turns out never to have been homed in
+`~/code` at all:
+
+<p align="center">
+  <img src="assets/search-43c588.svg" alt="claude-mv finding a conversation by what was said in it: --search over the transcript bodies with -R over the whole tree leaves two of the six sessions on the list, each row carrying the folder it is homed in and, where the opening line does not already show it, the line that matched; one is picked, the survey page restates the whole move, and the session homed in a scratch folder is re-homed onto the project it belongs to">
+</p>
+
+A folder that merely *encodes* like a subdirectory is not swept in: the
+encoding Claude uses for project dirs is lossy, so `~/code/api` and
+`~/code-api` collapse to one name, and only a session's own recorded path can
+tell them apart. And when a search comes up empty in the narrow scope but
+would have found something below it, the tool says so rather than shrugging:
+
+```
+claude-mv: none of the 27 sessions homed in ~/code mention image recovery
+  1 session below it mentions it — add --recursive to include it
+```
 
 **Scripting it.** `--no-browse` drops the two folder prompts and takes the
 paths as arguments; add `--session` to skip the session picker as well, which
@@ -158,7 +225,7 @@ folder that has sessions of its own — a monorepo subdir you have run Claude in
 carry, and says so:
 
 <p align="center">
-  <img src="assets/profiles-76a106.svg" alt="the same move on a machine with two Claude profiles and a nested project under the moved folder: both profiles are re-keyed in turn, each reporting its own project dirs, session files, config keys and history entries">
+  <img src="assets/profiles-43c588.svg" alt="the same move on a machine with two Claude profiles and a nested project under the moved folder: both profiles are re-keyed in turn, each reporting its own project dirs, session files, config keys and history entries">
 </p>
 
 Which profiles those are is [configurable](#configuration); by default it is
@@ -178,7 +245,7 @@ interactively on a tty, or supplied with `--on-conflict`:
 | `abort` | do nothing at all |
 
 <p align="center">
-  <img src="assets/conflict-76a106.svg" alt="claude-mv finding history already at the destination: the conflicting project dir and config key are listed, four resolution policies are offered, consolidate is chosen, and the merge is reported per store across both profiles">
+  <img src="assets/conflict-43c588.svg" alt="claude-mv finding history already at the destination: the conflicting project dir and config key are listed, four resolution policies are offered, consolidate is chosen, and the merge is reported per store across both profiles">
 </p>
 
 Because conflicts are resolved before the move, `abort` really does mean
@@ -224,7 +291,7 @@ point to roll back to. End to end, that is: the move, the listing, the undo.
 Nothing moves until the plan has been previewed and confirmed.
 
 <p align="center">
-  <img src="assets/restore-76a106.svg" alt="an overwrite move keeping its restore point as the archive of the history it discarded, that point then listed by claude-mv --restore, and finally rolled back: the folder move-back and the number of dirs and files to restore are previewed, confirmed, and reported done">
+  <img src="assets/restore-43c588.svg" alt="an overwrite move keeping its restore point as the archive of the history it discarded, that point then listed by claude-mv --restore, and finally rolled back: the folder move-back and the number of dirs and files to restore are previewed, confirmed, and reported done">
 </p>
 
 ## What gets migrated
@@ -292,21 +359,26 @@ Two soft dependencies, both used only by `--extract`, neither required —
 `claude-mv` is still stdlib Python plus zsh without them.
 
 **[ccfind](https://github.com/deviationist/ccfind)** lists the candidate
-sessions (`ccfind --json -l -x -d <src>`) and brings full-text search across
-transcript bodies. It is found the same three ways claude-profile is, with one
-wrinkle: ccfind is a zsh *function*, so there is usually no file on `PATH` to
-run — the wrapper traces it back to its defining script through
-`$functions_source` and hands that down. Without ccfind the same list is read
-straight off disk, still across every configured profile; what you lose is the
-search, not the coverage.
+sessions (`ccfind --json -l -I -x -d <src>`) and, with `--search`, greps them
+too. It is found the same three ways claude-profile is, with one wrinkle:
+ccfind is a zsh *function*, so there is usually no file on `PATH` to run — the
+wrapper traces it back to its defining script through `$functions_source` and
+hands that down. Without ccfind the same list is read straight off disk and
+the same search is run by `claude-mv` itself, still across every configured
+profile: it is a faster path, not a bigger one.
 
 `claude-mv` uses ccfind's answer only when it answered the same question it was
-asked: the `scope_exact` flag in the JSON envelope has to come back `true`.
-A ccfind that accepted `-x` and ignored it would be reporting on the whole
-*subtree* — for `~/code` that is every sub-repo's sessions — so anything else
-falls back to the filesystem. Setting `CLAUDE_MV_SOURCE=ccfind` turns that
-fallback into an error instead, which is what you want when you meant to use
-it.
+asked, and the JSON envelope is where that is checked:
+
+| Field | Has to say |
+|---|---|
+| `scope_exact` | `true` when `-x` was sent, `false` when it deliberately was not. A ccfind that accepted `-x` and ignored it would be reporting on the whole *subtree* — for `~/code`, every sub-repo's sessions |
+| `query` | the search text, echoed back verbatim. A leading word that happens to name one of ccfind's own profiles is read by it as a filter rather than as text, and the answer would then be that profile's whole history |
+| `case_sensitive` | `false`, so `CCFIND_CASE` on this machine cannot quietly redefine what `--search` means on it |
+
+Anything else falls back to the filesystem. Setting `CLAUDE_MV_SOURCE=ccfind`
+turns that fallback into an error instead, which is what you want when you
+meant to use it.
 
 **fzf** gives the picker multi-select and a search-as-you-type field. Without
 it you get a numbered list and one prompt (`1`, `1,3`, `2-4`, `all`).
@@ -337,7 +409,7 @@ is a pure overlay — the text is identical either way.
 The README images are regenerated by:
 
 ```sh
-zsh tools/generate-readme-svg.zsh   # → assets/{move,profiles,conflict,restore}-<hash>.svg + README refs
+zsh tools/generate-readme-svg.zsh   # → assets/{move,profiles,conflict,restore,sessions,picker,search}-<hash>.svg + README refs
 ```
 
 It builds a hermetic sandbox — a throwaway `$HOME` holding a folder to move and
@@ -347,8 +419,8 @@ with `CLAUDE_MV_COLOR=always`. Nothing outside that tmpdir is read or written.
 The sandbox's tmpdir paths are rewritten to `/Users/demo` for display, in both
 their plain and Claude-encoded forms; the answered prompts have their keystroke
 and line break put back, since a piped stdin is never echoed. Rerun it whenever
-the migration report, the conflict prompt, the session picker or the restore
-screen changes; commit the SVGs together with the README, whose `<img>` refs it
+the migration report, the conflict prompt, the session picker, the survey page
+or the restore screen changes; commit the SVGs together with the README, whose `<img>` refs it
 rewrites (the hash in the filename busts GitHub's image cache).
 
 Each image then plays as a small terminal session: the command **types itself**
@@ -381,7 +453,7 @@ python3 tests/test_claude_mv.py              # hermetic, ~1s
 CLAUDE_MV_LIVE_TEST=1 python3 tests/test_claude_mv.py   # + live layers, ~20s
 ```
 
-Nine layers, each closing a gap the previous ones can't see:
+Ten layers, each closing a gap the previous ones can't see:
 
 1. **Unit** — the pure helpers (encoding, canonicalization, config merging),
    the reporting layer (when colour is on, that it changes nothing but the
@@ -394,36 +466,43 @@ Nine layers, each closing a gap the previous ones can't see:
    in-dir `.claude.json` for the rest). Layer 2 passes exactly one
    `--profile`, so it cannot see a second one being skipped.
 4. **Session sources** — every way ccfind can be unusable (wrong scope,
-   missing handshake, a profile we were never given, a hit whose cwd isn't
-   ours, broken, absent) must land on the filesystem walk rather than on a
-   wrong list. Plus **the cross-check**: the *real* ccfind and the walk run
-   over one fixture and must return identical sessions. That last one is what
-   keeps a soft dependency honest — a source that disagrees makes the tool
-   behave differently per machine, and no per-source test can see it. It needs
-   a ccfind checkout, so it skips on CI; treat it as a local guard.
+   missing handshake, a query it heard as something else, a case folding we
+   did not ask for, a profile we were never given, a hit whose cwd isn't ours,
+   broken, absent) must land on the filesystem walk rather than on a wrong
+   list. Plus **the cross-check**: the *real* ccfind and the walk run over one
+   fixture and must return identical sessions — for a plain list, for a
+   `--search`, and for a recursive scope. That last one is what keeps a soft
+   dependency honest — a source that disagrees makes the tool behave
+   differently per machine, and no per-source test can see it. It needs a
+   ccfind checkout, so it skips on CI; treat it as a local guard.
 5. **Session move** — what moves and, just as much, what doesn't: siblings
    stay, the sidecar follows, the transcript is byte-identical afterwards, the
    config map is untouched, only that session's history entries are re-keyed.
    Plus the picker, driven over a pipe, and with a stub standing in for fzf.
-6. **Wrapper** — `claude-mv.zsh` decides *which* profiles the python is told
+6. **Search and scope** — what a query leaves on the list (a match in a reply,
+   in a tool result, in neither), how far down the tree the candidates come
+   from, and that a folder which merely *encodes* like a subdirectory is not
+   swept in. Plus the survey page: that it says what will happen, that
+   declining writes nothing, and that a run nobody could answer is not asked.
+7. **Wrapper** — `claude-mv.zsh` decides *which* profiles the python is told
    about and *where* ccfind is; the layers above bypass both by passing them
    in. Covers `.env` pin / claude-profile / built-in default, and ccfind as a
    loaded function, an override, a sibling clone, or absent.
-7. **Conformance** — read-only checks that the *real* `~/.claude` still
+8. **Conformance** — read-only checks that the *real* `~/.claude` still
    matches the format the fixtures imitate: the cwd encoding, `sessionId` on
    history entries (without which `--extract` can't tell one session's
    prompts from another's), the `<id>/` sidecar layout, and that transcripts
    are still written compactly. Without this, a Claude Code format change
    would leave every other test green while the tool broke.
-8. **Live** — drives the real `claude` binary and uses it as the oracle for
+9. **Live** — drives the real `claude` binary and uses it as the oracle for
    its own cwd encoding: Claude writes a project dir, claude-mv migrates it,
    Claude runs again at the new path and must land in the same directory
    rather than creating a second one.
-9. **Resume UI** — runs `claude --resume` under tmux at the moved path and
+10. **Resume UI** — runs `claude --resume` under tmux at the moved path and
    reads the picker off the screen, with a plain-`mv` negative control that
    must come up empty.
 
-Layers 8 and 9 are opt-in via `CLAUDE_MV_LIVE_TEST=1`. Neither needs
+Layers 9 and 10 are opt-in via `CLAUDE_MV_LIVE_TEST=1`. Neither needs
 authentication or spends any tokens: Claude Code writes its project files
 before it checks credentials, and the resume picker reads sessions straight
 off disk.

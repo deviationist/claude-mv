@@ -269,6 +269,31 @@ MACHINE_PREFIXES = ("<", "Caveat:", "[Request interrupted",
                     "Base directory for this skill:")
 
 
+def turn_text(obj: dict) -> str:
+    """What was said on one transcript line, as one clean line of text.
+
+    "" when the line carries nothing a person would read — a summary record, a
+    tool call, a turn whose blocks are all of some other kind.
+
+    A turn's content is usually a list of typed blocks, and tool RESULTS come
+    back as user turns too — on this machine 14049 of 14132 blocks in user
+    turns are tool_result, against 81 text. Take the text blocks and nothing
+    else, so a turn that was only the machine reporting back reads as empty.
+    """
+    content = (obj.get("message") or {}).get("content")
+    if isinstance(content, list):
+        content = " ".join(b.get("text", "") for b in content
+                           if isinstance(b, dict) and b.get("type") == "text")
+    if not (isinstance(content, str) and content.strip()):
+        return ""
+    return " ".join(content.split())
+
+
+def clip(text: str, limit: int) -> str:
+    """`text` in at most `limit` characters, the ellipsis inside the budget."""
+    return text[:limit - 1] + "…" if len(text) > limit else text
+
+
 def session_snippet(path: str, limit: int = 120) -> str:
     """First human turn in a transcript, as the label a picker shows.
 
@@ -284,20 +309,9 @@ def session_snippet(path: str, limit: int = 120) -> str:
                     continue
                 if obj.get("type") != "user":
                     continue
-                content = (obj.get("message") or {}).get("content")
-                if isinstance(content, list):
-                    # A turn's content is usually a list of typed blocks, and
-                    # tool RESULTS come back as user turns too — on this
-                    # machine 14049 of 14132 blocks in user turns are
-                    # tool_result, against 81 text. Take the text blocks and
-                    # nothing else, so a turn that was only the machine
-                    # reporting back contributes nothing and we keep looking.
-                    content = " ".join(b.get("text", "") for b in content
-                                       if isinstance(b, dict)
-                                       and b.get("type") == "text")
-                if not (isinstance(content, str) and content.strip()):
+                text = turn_text(obj)
+                if not text:
                     continue
-                text = " ".join(content.split())
                 # Not every "user" turn was typed by one: Claude injects
                 # caveats, slash-command expansions, skill preambles and
                 # interruption markers as user messages, and a picker row
@@ -310,13 +324,133 @@ def session_snippet(path: str, limit: int = 120) -> str:
                 # to show.
                 if text.startswith(MACHINE_PREFIXES):
                     continue
-                return text[:limit - 1] + "…" if len(text) > limit else text
+                return clip(text, limit)
     except OSError:
         pass
     return "(no prompt recorded)"
 
 
-def session_rows(profile: str, src: str) -> list[dict]:
+# ── full-text search ────────────────────────────────────────────────────────
+# --search narrows the candidates to the sessions that actually mention
+# something, which is the difference between "I know roughly when it was" and
+# "I know what it was about".
+#
+# Matching mirrors ccfind exactly, because ccfind does the matching whenever it
+# is installed: a **literal, case-insensitive substring** of a raw transcript
+# line — not a regex, not a word-by-word AND, and it cannot span two lines.
+# Matching the raw line rather than the decoded conversation is ccfind's choice
+# and it is the right one here: a path, a filename, a tool result or an error
+# message nobody ever typed is often exactly how a conversation is remembered.
+#
+# The excerpt, though, is ours in both cases — see excerpt(). A row has to read
+# the same however the match was found, and ccfind's own snippet is a window on
+# the raw JSON, which is the right answer for a search tool printing lines and
+# the wrong one for a picker offering conversations.
+
+def needle(query: str) -> str:
+    """The query as it will be matched: words joined by one space, lowercased.
+
+    ccfind joins its query words with a single space and folds case by
+    default; this has to agree with it, or the same --search would mean two
+    different things depending on what happens to be installed.
+    """
+    return " ".join(query.split()).lower()
+
+
+def one_line(line: str) -> str:
+    """A transcript line with its control characters made printable.
+
+    Length-preserving on purpose: the caller has already found the match by
+    offset in the raw line, so anything that shifted the text would move the
+    window off it.
+    """
+    return "".join(ch if ch >= " " else " " for ch in line.rstrip("\n"))
+
+
+def window(text: str, at: int, limit: int) -> str:
+    """`limit` characters of `text` around the hit at `at`, marked when cut.
+
+    A third of the budget goes to the left of the match: enough to see what
+    the sentence was doing, while keeping the match itself on screen when a
+    narrow terminal trims the row further.
+    """
+    start = max(0, at - limit // 3)
+    end = start + limit
+    return (("…" if start else "") + text[start:end].strip() +
+            ("…" if end < len(text) else ""))
+
+
+def excerpt(line: str, want: str, limit: int = 120) -> str:
+    """The matching line, as the picker should show it.
+
+    The line is a JSON record, so the hit can be in what was said or in the
+    bookkeeping around it. When the turn's own text contains it, show that —
+    it is the sentence a person would recognise. Otherwise fall back to the
+    raw record, which is at least where the match actually is.
+    """
+    text = ""
+    try:
+        text = turn_text(json.loads(line))
+    except ValueError:
+        pass
+    raw = one_line(line)
+    for candidate in (text, raw):
+        at = candidate.lower().find(want)
+        if at >= 0:
+            return window(candidate, at, limit)
+    return window(raw, 0, limit)
+
+
+def match_excerpt(path: str, want: str) -> str | None:
+    """The first line of `path` mentioning `want`. None when none does.
+
+    Stops at the first hit, so a session that matches early costs a few lines
+    of reading rather than a whole transcript.
+    """
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                if want in line.lower():
+                    return excerpt(line, want)
+    except OSError:
+        return None          # unreadable is not a match, it is not an answer
+    return None
+
+
+def search_rows(rows: list[dict], want: str) -> list[dict]:
+    """The rows whose transcript mentions `want`, each carrying its excerpt."""
+    hits = []
+    for row in rows:
+        found = match_excerpt(row["path"], want)
+        if found is not None:
+            row["match"] = found
+            hits.append(row)
+    return hits
+
+
+def attach_excerpts(rows: list[dict], want: str) -> None:
+    """Settle the excerpt each row shows for `want`.
+
+    A row whose opening line already contains the match gets none: the picker
+    would otherwise print the same words twice in two columns, and the opening
+    line is the better half.
+
+    Rows ccfind matched arrive with no excerpt at all, so they are read here.
+    That read can come back empty — ccfind greps bytes in the machine's
+    locale, we read decoded text, and a match it saw is not guaranteed to be
+    one we can point at. The row stays, because ccfind is the one that was
+    asked; it just shows nothing about where the match was rather than
+    inventing it.
+    """
+    for row in rows:
+        if want in row["snippet"].lower():
+            row["match"] = ""
+        elif not row.get("match"):
+            row["match"] = match_excerpt(row["path"], want) or ""
+
+
+def session_rows(profile: str, src: str,
+                 recursive: bool = False) -> list[dict]:
     """Sessions homed in <profile>/projects/<enc(src)>/ — the filesystem source.
 
     "Homed in" is the right predicate, not "recorded cwd equals src": a session
@@ -324,29 +458,40 @@ def session_rows(profile: str, src: str) -> list[dict]:
     exists for — keeps its file in src's project dir for its whole life. Its
     LATER cwd lines are somewhere else entirely, so anything matching on those
     would miss the one session the user is looking for.
+
+    `recursive` widens that to src and every project dir below it, which is
+    the scope for "I know what the conversation was about, not which folder I
+    was standing in when it started". Same prefix-then-confirm walk the folder
+    move uses, and for the same reason: enc() is lossy, so `<enc(src)>-thing`
+    is only src's subdirectory when a session inside it says so.
     """
-    d = os.path.join(profile, "projects", enc(src))
-    if not os.path.isdir(d):
-        return []
+    root = os.path.join(profile, "projects")
+    if recursive:
+        dirs = find_project_dirs(root, src)
+    else:
+        d = os.path.join(root, enc(src))
+        dirs = [(d, src)] if os.path.isdir(d) else []
     rows = []
-    for name in sorted(os.listdir(d)):
-        if not name.endswith(".jsonl"):
-            continue
-        path = os.path.join(d, name)
-        # enc() is lossy, so this dir can legitimately hold sessions of a
-        # different real path (/a/b/c and /a/b-c encode alike, and Claude files
-        # both here). Confirm against what the session recorded before offering
-        # to move it — the same confirmation find_project_dirs() makes.
-        cwd = jsonl_first_cwd_of_file(path)
-        if cwd is not None and cwd != src:
-            continue
-        try:
-            mtime = os.path.getmtime(path)
-        except OSError:
-            mtime = 0.0
-        rows.append({"id": name[:-len(".jsonl")], "profile": profile,
-                     "path": path, "mtime": mtime,
-                     "snippet": session_snippet(path)})
+    for d, home in dirs:
+        for name in sorted(os.listdir(d)):
+            if not name.endswith(".jsonl"):
+                continue
+            path = os.path.join(d, name)
+            # enc() is lossy, so this dir can legitimately hold sessions of a
+            # different real path (/a/b/c and /a/b-c encode alike, and Claude
+            # files both here). Confirm against what the session recorded
+            # before offering to move it.
+            cwd = jsonl_first_cwd_of_file(path)
+            if cwd is not None and not (under(cwd, src) if recursive
+                                        else cwd == src):
+                continue
+            try:
+                mtime = os.path.getmtime(path)
+            except OSError:
+                mtime = 0.0
+            rows.append({"id": name[:-len(".jsonl")], "profile": profile,
+                         "path": path, "mtime": mtime, "home": cwd or home,
+                         "snippet": session_snippet(path)})
     return rows
 
 
@@ -369,15 +514,28 @@ def ccfind_command(args: list[str]) -> list[str] | None:
     return None
 
 
-def ccfind_rows(src: str, profiles: list[str], limit: int) -> list[dict] | None:
+def ccfind_rows(src: str, profiles: list[str], limit: int, query: str = "",
+                recursive: bool = False) -> list[dict] | None:
     """Sessions homed in `src`, via ccfind. None = unusable, use the walk.
 
     Falling through rather than raising is the whole contract of a soft
     dependency: ccfind absent, too old, broken, or answering about a scope we
     did not ask for must all land on the filesystem source, never on an error
     and never on a silently different answer.
+
+    A `query` is handed straight down: ccfind greps the transcripts with -F
+    and reports the sessions that matched, which is the same question we would
+    otherwise answer by reading every candidate ourselves. `-I` goes with it
+    so that CCFIND_CASE on this machine cannot quietly decide what --search
+    means; without it the fallback matcher and ccfind would disagree about
+    case on some machines and not others.
     """
-    cmd = ccfind_command(["--json", "-l", "-x", "-d", src, "-n", str(limit)])
+    scope = ["-d", src] if recursive else ["-x", "-d", src]
+    # `--` ends ccfind's flag loop, so a query that opens with a dash is text
+    # rather than an unknown option.
+    text = ["--", query] if query else []
+    cmd = ccfind_command(["--json", "-l", "-I", *scope, "-n", str(limit),
+                          *text])
     if not cmd:
         return None
     try:
@@ -394,10 +552,22 @@ def ccfind_rows(src: str, profiles: list[str], limit: int) -> list[dict] | None:
     # The compatibility handshake. A ccfind predating -x rejects the flag, but
     # one that accepted it and ignored it would answer about the whole SUBTREE
     # — for ~/code that is every sub-repo's sessions, offered up as if they
-    # lived here. `scope_exact` is how the answer says which question it heard;
-    # anything but a definite yes means we cannot use it.
-    if doc.get("scope_exact") is not True:
+    # lived here. `scope_exact` is how the answer says which question it heard,
+    # so it has to say back exactly what we asked: True when we sent -x, False
+    # when we deliberately did not. Anything else, missing included, is an
+    # answer to a different question.
+    if doc.get("scope_exact") is not (not recursive):
         return None
+    if query:
+        # Same handshake, for the search. ccfind reads a leading positional as
+        # a profile name when it matches one, so a query whose first word is
+        # also a configured profile label would silently become a filter and
+        # the answer would be every session in that profile. The echoed query
+        # is how we know it heard text; `case_sensitive` is how we know -I
+        # landed, because a query matched with the wrong case-folding is the
+        # same kind of wrong answer.
+        if doc.get("query") != query or doc.get("case_sensitive") is not False:
+            return None
 
     known = {os.path.realpath(p): p for p in profiles}
     rows = []
@@ -422,15 +592,22 @@ def ccfind_rows(src: str, profiles: list[str], limit: int) -> list[dict] | None:
         cwd = hit.get("cwd")
         if cwd in (None, "?"):
             cwd = jsonl_first_cwd_of_file(path)
-        if cwd is not None and cwd != src:
+        if cwd is not None and not (under(cwd, src) if recursive
+                                    else cwd == src):
             continue
         try:
             mtime = os.path.getmtime(path)
         except OSError:
             continue          # ccfind saw it, we cannot — do not offer it
+        # ccfind's snippet is a window on the raw JSON line that matched,
+        # which is what a search tool printing lines should show and not what
+        # a picker offering conversations should: with a query, the row's
+        # identity stays the opening prompt and the match goes in its own
+        # column. See excerpt().
+        snippet = (("" if query else hit.get("snippet"))
+                   or session_snippet(path))
         rows.append({"id": sid, "profile": profile, "path": path,
-                     "mtime": mtime,
-                     "snippet": hit.get("snippet") or session_snippet(path)})
+                     "mtime": mtime, "home": cwd or src, "snippet": snippet})
     if doc.get("truncated"):
         print(wmsg(f"ccfind returned {c(str(doc.get('shown')), 'bold')} of "
                    f"{c(str(doc.get('total')), 'bold')} sessions — raise "
@@ -439,31 +616,56 @@ def ccfind_rows(src: str, profiles: list[str], limit: int) -> list[dict] | None:
     return rows
 
 
-def find_sessions(src: str, profiles: list[str],
-                  limit: int) -> list[dict] | None:
+def find_sessions(src: str, profiles: list[str], limit: int,
+                  query: str = "",
+                  recursive: bool = False) -> list[dict] | None:
     """The candidate list, newest first, from whichever source is available.
 
     None means the source could not answer at all — distinct from an empty
     list, which means it answered "nothing here". The caller reports them
     differently: one is a broken setup, the other is a mistyped path.
+
+    With a `query`, whichever source answered has already narrowed the list to
+    the sessions that mention it — ccfind by grepping, the walk by reading. The
+    excerpt each row shows is attached here either way, and only for the rows
+    that survive the cap, so a search costs a re-read of what it will print
+    rather than of everything it looked at.
     """
     mode = (os.environ.get("CLAUDE_MV_SOURCE") or "auto").strip().lower()
     cap = limit if limit else 10_000      # 0 = uncapped (see run_session_mode)
+    query = " ".join(query.split())       # the form ccfind echoes back
+    want = needle(query)
     rows = None
     if mode in ("auto", "ccfind"):
-        rows = ccfind_rows(src, profiles, cap)
+        rows = ccfind_rows(src, profiles, cap, query, recursive)
         if rows is None and mode == "ccfind":
             print(emsg("CLAUDE_MV_SOURCE=ccfind, but ccfind could not answer "
-                       "(not installed, too old for --json/-x, or failed) — "
-                       "unset it to walk the filesystem instead"),
+                       "(not installed, too old for --json/-x/-I, answered a "
+                       "different question, or failed) — unset it to walk the "
+                       "filesystem instead"),
                   file=sys.stderr)
             return None
     if rows is None:
-        rows = [row for p in profiles for row in session_rows(p, src)]
+        rows = [row for p in profiles
+                for row in session_rows(p, src, recursive)]
+        if want:
+            rows = search_rows(rows, want)
     # Newest first, id as the tie-break so the order — and so every test that
     # picks "the second row" — is stable rather than filesystem-dependent.
     rows.sort(key=lambda r: (-r["mtime"], r["id"]))
-    return rows[:cap]
+    if want and len(rows) > cap:
+        # The plain list is capped quietly — --limit says what it does and the
+        # newest N is a reasonable answer to "show me the sessions". A capped
+        # SEARCH is different: the match you are looking for may be the one
+        # that fell off, and nothing on screen would say so.
+        print(wmsg(f"{c(str(len(rows)), 'bold')} sessions match — showing the "
+                   f"newest {c(str(cap), 'bold')}; raise "
+                   f"{c('--limit', 'cyan')} to see the rest"),
+              file=sys.stderr)
+    rows = rows[:cap]
+    if want:
+        attach_excerpts(rows, want)
+    return rows
 
 
 def rewrite_jsonl_field(path: str, field: str, old: str, new: str,
@@ -638,11 +840,51 @@ def ask_conflict_mode(already_moved: bool = False) -> str | None:
 # prize — it is the path the suite exercises, since a pipe can drive it and CI
 # has no fzf.
 
-def session_label(row: dict, width: int = 0) -> str:
-    """One picker row: when it ran, its id, and how it opened."""
-    when = time.strftime("%Y-%m-%d %H:%M", time.localtime(row["mtime"]))
-    sid = row["id"][:8]
-    return f"{when}  {sid}  {row['snippet']}".ljust(width)
+def session_label(row: dict, home_width: int = 0) -> str:
+    """One picker row: when it ran, its id, where it lives, how it opened.
+
+    The "where" column appears only in a recursive scope, where the rows come
+    from more than one folder and picking one without seeing which folder it
+    is pulled out of would be picking blind. A flat list has no such column
+    and reads exactly as it always did.
+
+    With a search, the opening line still leads — it is what identifies the
+    conversation — and the matching line follows it, when the match is not
+    already visible in the opening line.
+    """
+    cells = [time.strftime("%Y-%m-%d %H:%M", time.localtime(row["mtime"])),
+             row["id"][:8]]
+    if home_width:
+        cells.append((row.get("where") or "").ljust(home_width))
+    cells.append(row["snippet"])
+    label = "  ".join(cells)
+    return label + "   ↦ " + row["match"] if row.get("match") else label
+
+
+def where_col(home: str, src: str) -> str:
+    """A session's home folder as a picker column: relative to the root.
+
+    "./" for the root itself and "./sub/" for anything below it, so the column
+    reads as a tree rather than as three repetitions of the same long prefix.
+    Anything else — a session whose recorded cwd could not be read, so its
+    home is only known to the directory it was filed in — keeps its absolute
+    path rather than being drawn as something it is not.
+    """
+    if home == src or not home:
+        return "./"
+    if under(home, src):
+        return "./" + os.path.relpath(home, src) + "/"
+    return home
+
+
+def session_labels(rows: list[dict]) -> list[str]:
+    """Every picker row, aligned against each other.
+
+    Both pickers go through this, so the fzf list and the numbered list stay
+    the same list — the columns line up in one because they line up in both.
+    """
+    home_width = max((len(r.get("where") or "") for r in rows), default=0)
+    return [session_label(r, home_width) for r in rows]
 
 
 def fzf_layout(nrows: int) -> list[str]:
@@ -675,7 +917,8 @@ def pick_with_fzf(rows: list[dict]) -> list[dict] | None:
         return None
     # Index-prefixed so the selection maps back to a row exactly, rather than
     # by matching the label text back — snippets can repeat, ids cannot.
-    menu = "\n".join(f"{i}\t{session_label(r)}" for i, r in enumerate(rows))
+    menu = "\n".join(f"{i}\t{label}"
+                     for i, label in enumerate(session_labels(rows)))
     try:
         r = subprocess.run(
             [fzf, "--multi", "--with-nth=2..", "--delimiter=\t",
@@ -731,8 +974,8 @@ def pick_numbered(rows: list[dict]) -> list[dict]:
     """The no-fzf path: a numbered list and one prompt."""
     print("\n" + c("sessions available to move:", "bold"))
     width = max(len(str(len(rows))), 2)
-    for i, row in enumerate(rows, 1):
-        print(f"  {c(str(i).rjust(width), 'bold')}  {session_label(row)}")
+    for i, label in enumerate(session_labels(rows), 1):
+        print(f"  {c(str(i).rjust(width), 'bold')}  {label}")
     print(c("  pick one or more: 1 · 1,3 · 2-4 · all · empty to cancel", "dim"))
     while True:
         try:
@@ -789,26 +1032,42 @@ def pick_sessions(rows: list[dict]) -> list[dict]:
 # guess into a choice: on the source it shows where the history actually is,
 # and on the destination it warns that something is already there.
 
-def session_count(profiles: list[str], path: str) -> int:
+def session_count(profiles: list[str], path: str,
+                  recursive: bool = False) -> int:
     """Sessions homed in `path`, across every profile.
 
     Cheap enough to run per row: enc() is a pure string transform, so this is
     one isdir() and one listdir() per profile, no scanning.
+
+    A recursive run counts the tree instead, because that is the number that
+    row is offering. Costlier — one listdir of the projects root per profile,
+    plus a read of the dirs whose names share the prefix — and still bounded
+    by the number of project dirs, not by the size of any transcript.
+
+    Both are counts of files, not of confirmed sessions, so an encoded dir
+    that mixes a nested project with an unrelated folder of the same encoding
+    is counted whole and the row can read one or two high. Deliberate: this
+    runs per row of a directory browser, the number is a signpost for "the
+    history is over here", and the next screen lists the sessions themselves.
     """
     n = 0
     for profile in profiles:
-        d = os.path.join(profile, "projects", enc(path))
-        try:
-            n += sum(1 for x in os.listdir(d) if x.endswith(".jsonl"))
-        except OSError:
-            continue
+        root = os.path.join(profile, "projects")
+        dirs = ([d for d, _ in find_project_dirs(root, path)] if recursive
+                else [os.path.join(root, enc(path))])
+        for d in dirs:
+            try:
+                n += sum(1 for x in os.listdir(d) if x.endswith(".jsonl"))
+            except OSError:
+                continue
     return n
 
 
-def dir_rows(current: str, profiles: list[str]) -> list[tuple[str, str]]:
+def dir_rows(current: str, profiles: list[str],
+             recursive: bool = False) -> list[tuple[str, str]]:
     """(payload, display) for the navigator at `current`."""
     def note(path):
-        n = session_count(profiles, path)
+        n = session_count(profiles, path, recursive)
         return f"  ({n} session{'' if n == 1 else 's'})" if n else ""
 
     rows = [(current, f"·  use this directory{note(current)}")]
@@ -831,15 +1090,15 @@ SKIP_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv",
              ".next", "dist", "build", ".DS_Store"}
 
 
-def pick_dir_with_fzf(start: str, title: str,
-                      profiles: list[str]) -> str | None:
+def pick_dir_with_fzf(start: str, title: str, profiles: list[str],
+                      recursive: bool = False) -> str | None:
     """Navigate to a directory. None when fzf is unusable, "" when cancelled."""
     fzf = shutil.which("fzf")
     if not fzf:
         return None
     current = start
     while True:
-        rows = dir_rows(current, profiles)
+        rows = dir_rows(current, profiles, recursive)
         menu = "\n".join(f"{i}\t{d}" for i, (_, d) in enumerate(rows))
         try:
             r = subprocess.run(
@@ -916,11 +1175,12 @@ def readline_dir_prompt(start: str, title: str) -> str:
         print(c(f"  ? {path} is not a directory", "yellow"))
 
 
-def pick_dir(start: str, title: str, profiles: list[str]) -> str:
+def pick_dir(start: str, title: str, profiles: list[str],
+             recursive: bool = False) -> str:
     """Choose a directory, however this machine is equipped. "" = cancelled."""
     mode = (os.environ.get("CLAUDE_MV_PICKER") or "auto").strip().lower()
     if fzf_wanted(mode):
-        picked = pick_dir_with_fzf(start, title, profiles)
+        picked = pick_dir_with_fzf(start, title, profiles, recursive)
         if picked is not None:
             return picked
         if mode == "fzf":
@@ -1510,7 +1770,9 @@ def resolve_extract_paths(args, profiles: list[str]):
         return canonical(src), canonical(dst)
 
     src = pick_dir(canonical(src) if src else os.path.realpath(os.getcwd()),
-                   "Which folder holds the sessions?", profiles)
+                   "Which folder to search under?" if args.recursive
+                   else "Which folder holds the sessions?",
+                   profiles, args.recursive)
     if not src:
         print(c("cancelled — nothing was changed", "yellow"))
         return None, None
@@ -1551,21 +1813,106 @@ def settle_destination(args, src: str, dst: str | None,
     return dst
 
 
+BORN_HINT = ("a session started elsewhere and cd'd in is homed where it "
+             "STARTED — try that path")
+
+
+def explain_empty(src: str, profiles: list[str], query: str,
+                  recursive: bool) -> str:
+    """Why the candidate list came back empty, in the terms it was asked in.
+
+    Three different mistakes end up here — nothing in this folder, nothing
+    matching what you asked for, and everything one folder further down — and
+    one message can only describe the first. Asking the question the other two
+    ways costs another pass over a tree we have just established is small, and
+    turns a dead end into the next thing to try.
+    """
+    err = sys.stderr
+    scope = (("under " if recursive else "in ")
+             + c(src, "cyan", stream=err))
+    homed = find_sessions(src, profiles, 0, recursive=recursive) or []
+    # Would a wider scope have answered? Only worth asking when we were not
+    # already at the widest.
+    wider = ([] if recursive
+             else find_sessions(src, profiles, 0, query, True) or [])
+    if query and homed:
+        msg = emsg(f"none of the {c(str(len(homed)), 'bold', stream=err)} "
+                   f"sessions homed {scope} mention "
+                   f"{c(query, 'bold', stream=err)}")
+    elif query:
+        msg = emsg(f"no sessions are homed {scope}, so there is nothing to "
+                   f"search")
+    else:
+        msg = emsg(f"no sessions are homed {scope}")
+    if wider:
+        n = len(wider)
+        found = (f"{n} session{'' if n == 1 else 's'} below it"
+                 + (f" {'mentions' if n == 1 else 'mention'} it" if query
+                    else f" {'is' if n == 1 else 'are'} homed there"))
+        return (msg + "\n  " + c(f"{found} — add ", "yellow", stream=err) +
+                c("--recursive", "cyan", stream=err) +
+                c(f" to include {'it' if n == 1 else 'them'}", "yellow",
+                  stream=err))
+    return msg + "\n  " + c(f"({BORN_HINT})", "dim", stream=err)
+
+
+def confirm_session_move(src: str, dst: str, chosen: list[dict],
+                         plans: list[dict], mode: str,
+                         recursive: bool) -> bool:
+    """The survey page: the whole decision restated, then one question.
+
+    The guide asks three questions and then acts, and the thing being acted on
+    — which conversation, out of which folder, into which other one — is
+    exactly the thing that is easy to get one row wrong, especially now that a
+    search can put rows from four different folders in one list. So the last
+    screen before anything is written says it all back.
+
+    Only where there is someone to answer: a run that could not have been
+    asked a question is a run nobody is watching, and --force means the
+    watching is over.
+    """
+    conflicted = {i["id"] for plan in plans for i in plan["conflicts"]}
+    fate = "replaced" if mode == "overwrite" else "kept, this one skipped"
+    print("\n" + c("about to re-home ", "bold") + c(str(len(chosen)), "bold") +
+          f" session{'' if len(chosen) == 1 else 's'}:")
+    print(c("  from  ", "dim") + c(src, "cyan") +
+          c(" and below" if recursive else "", "dim"))
+    print(c("  to    ", "dim") + c(dst, "cyan"))
+    for row, label in zip(chosen, session_labels(chosen)):
+        note = ("  " + c(f"(already at the destination — {fate})", "yellow")
+                if row["id"] in conflicted else "")
+        print("    " + label + note)
+    print(c("  no folder is moved, and the transcripts keep the cwd they "
+            "recorded", "dim"))
+    print(c("  the destination's trust and tool permissions are left as "
+            "Claude finds them", "dim"))
+    try:
+        return input(c("proceed? [y/N]: ", "bold")).strip().lower() in ("y",
+                                                                       "yes")
+    except EOFError:
+        return False
+
+
 def run_session_mode(args, src: str, dst: str | None,
                      profiles: list[str]) -> int:
     """--extract: move chosen sessions' history from `src` to `dst`."""
+    query = " ".join((args.search or "").split())
     # --limit exists to keep the picker readable. Naming ids outright is not
     # the picker, and silently not finding a session because it sorted below
     # an arbitrary cutoff would be the worst kind of no-op.
-    rows = find_sessions(src, profiles, 0 if args.session else args.limit)
+    rows = find_sessions(src, profiles, 0 if args.session else args.limit,
+                         query, args.recursive)
     if rows is None:
         return 1                      # the source already said why
     if not rows:
-        print(emsg(f"no sessions are homed in "
-                   f"{c(src, 'cyan', stream=sys.stderr)}\n  (a session started "
-                   f"elsewhere and cd'd in is homed where it STARTED — try "
-                   f"that path)"), file=sys.stderr)
+        print(explain_empty(src, profiles, query, args.recursive),
+              file=sys.stderr)
         return 1
+    if args.recursive:
+        # One list, several home folders: the row has to say which, or the
+        # pick is blind. Flat runs get no column at all.
+        for row in rows:
+            row["where"] = where_col(row.get("home") or src, src)
 
     if args.session:
         chosen, missing, ambiguous = [], [], []
@@ -1596,7 +1943,9 @@ def run_session_mode(args, src: str, dst: str | None,
         # dedupe: two spellings of one session select it once
         chosen = list({r["id"]: r for r in chosen}.values())
     else:
-        print(c("sessions homed in ", "bold") + c(src, "cyan") +
+        print(c("sessions homed " + ("under " if args.recursive else "in "),
+                "bold") + c(src, "cyan") +
+              (c(" mentioning ", "bold") + c(query, "bold") if query else "") +
               c(f" ({len(rows)} found)", "dim"))
         chosen = pick_sessions(rows)
         if not chosen:
@@ -1633,6 +1982,12 @@ def run_session_mode(args, src: str, dst: str | None,
         if args.on_conflict is None:
             print(c(f"  keeping the destination's copy "
                     f"(--on-conflict overwrite to replace it)", "dim"))
+
+    if not (args.dry_run or args.force) and can_prompt():
+        if not confirm_session_move(src, dst, chosen, plans, mode,
+                                    args.recursive):
+            print(c("cancelled — nothing was changed", "yellow"))
+            return 1
 
     stamp = time.strftime("%Y%m%d-%H%M%S")
     rp = None
@@ -1716,7 +2071,8 @@ def main() -> int:
     ap.add_argument("-n", "--dry-run", action="store_true",
                     help="show what would happen without changing anything")
     ap.add_argument("--force", action="store_true",
-                    help="skip the live-session guard / restore confirmation")
+                    help="skip the live-session guard, the --extract survey "
+                         "page and the restore confirmation")
     ap.add_argument("--already-moved", action="store_true",
                     help="the folder was already renamed by something else: "
                          "move nothing, just re-key the history stranded on "
@@ -1740,6 +2096,15 @@ def main() -> int:
     ap.add_argument("--session", action="append", default=[], metavar="ID",
                     help="session id to move (repeatable); skips the picker. "
                          "An 8-character prefix is enough")
+    ap.add_argument("--search", metavar="TEXT",
+                    help="with --extract: offer only the sessions whose "
+                         "transcript mentions TEXT — the whole conversation "
+                         "is searched, not just its opening line. A literal, "
+                         "case-insensitive substring")
+    ap.add_argument("-R", "--recursive", action="store_true",
+                    help="with --extract: consider the sessions homed in "
+                         "<src> AND in every folder below it (default: that "
+                         "one folder only)")
     ap.add_argument("--limit", type=int, default=50, metavar="N",
                     help="how many sessions to offer (default 50)")
     ap.add_argument("--restore", nargs="?", const="list", metavar="STAMP",
@@ -1778,6 +2143,19 @@ def main() -> int:
     if args.session and not args.extract:
         ap.error("--session <id> selects which sessions to move, so it needs "
                  "--extract")
+    if args.search is not None and not args.extract:
+        ap.error("--search narrows which sessions are offered, so it needs "
+                 "--extract; the folder move takes a folder's whole history")
+    if args.recursive and not args.extract:
+        ap.error("--recursive widens which sessions are offered, so it needs "
+                 "--extract; a folder move already takes the projects nested "
+                 "inside the folder with it")
+    if args.search is not None and not args.search.strip():
+        ap.error("--search needs something to look for")
+    if args.search is not None and args.session:
+        ap.error("--search and --session are two ways to say which sessions: "
+                 "one filters the list, the other names ids outright and "
+                 "skips it")
 
     if args.extract:
         # Paths are settled inside the mode — the source picker needs the

@@ -1,0 +1,570 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="917" height="618" viewBox="0 0 917 618" role="img" aria-label="claude-mv finding a conversation by what was said in it: --search over the transcript bodies with -R over the whole tree leaves two of the six sessions on the list, each row carrying the folder it is homed in and, where the opening line does not already show it, the line that matched; one is picked, the survey page restates the whole move, and the session homed in a scratch folder is re-homed onto the project it belongs to">
+  <rect width="917" height="618" rx="10" fill="#1e1e2e"/>
+  <rect width="917" height="30" rx="10" fill="#181825"/>
+  <rect y="24" width="917" height="6" fill="#181825"/>
+  <circle cx="18" cy="15" r="5.5" fill="#f38ba8"/><circle cx="36" cy="15" r="5.5" fill="#f9e2af"/><circle cx="54" cy="15" r="5.5" fill="#a6e3a1"/>
+  <text x="458" y="20" text-anchor="middle" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="12" fill="#9399b2">claude-mv</text>
+  <style>
+    @keyframes cmvp0 { 0%{opacity:0} 0.000%{opacity:1} }
+    #p0 { animation: cmvp0 8.17s step-end infinite }
+    @keyframes cmvc0_1 { 0%{opacity:0} 0.332%{opacity:1} }
+    #c0_1 { animation: cmvc0_1 8.17s step-end infinite }
+    @keyframes cmvc0_2 { 0%{opacity:0} 0.665%{opacity:1} }
+    #c0_2 { animation: cmvc0_2 8.17s step-end infinite }
+    @keyframes cmvc0_3 { 0%{opacity:0} 0.997%{opacity:1} }
+    #c0_3 { animation: cmvc0_3 8.17s step-end infinite }
+    @keyframes cmvc0_4 { 0%{opacity:0} 1.330%{opacity:1} }
+    #c0_4 { animation: cmvc0_4 8.17s step-end infinite }
+    @keyframes cmvc0_5 { 0%{opacity:0} 1.662%{opacity:1} }
+    #c0_5 { animation: cmvc0_5 8.17s step-end infinite }
+    @keyframes cmvc0_6 { 0%{opacity:0} 1.995%{opacity:1} }
+    #c0_6 { animation: cmvc0_6 8.17s step-end infinite }
+    @keyframes cmvc0_7 { 0%{opacity:0} 2.327%{opacity:1} }
+    #c0_7 { animation: cmvc0_7 8.17s step-end infinite }
+    @keyframes cmvc0_8 { 0%{opacity:0} 2.660%{opacity:1} }
+    #c0_8 { animation: cmvc0_8 8.17s step-end infinite }
+    @keyframes cmvc0_9 { 0%{opacity:0} 2.992%{opacity:1} }
+    #c0_9 { animation: cmvc0_9 8.17s step-end infinite }
+    @keyframes cmvc0_10 { 0%{opacity:0} 3.324%{opacity:1} }
+    #c0_10 { animation: cmvc0_10 8.17s step-end infinite }
+    @keyframes cmvc0_11 { 0%{opacity:0} 3.657%{opacity:1} }
+    #c0_11 { animation: cmvc0_11 8.17s step-end infinite }
+    @keyframes cmvc0_12 { 0%{opacity:0} 3.989%{opacity:1} }
+    #c0_12 { animation: cmvc0_12 8.17s step-end infinite }
+    @keyframes cmvc0_13 { 0%{opacity:0} 4.322%{opacity:1} }
+    #c0_13 { animation: cmvc0_13 8.17s step-end infinite }
+    @keyframes cmvc0_14 { 0%{opacity:0} 4.654%{opacity:1} }
+    #c0_14 { animation: cmvc0_14 8.17s step-end infinite }
+    @keyframes cmvc0_15 { 0%{opacity:0} 4.987%{opacity:1} }
+    #c0_15 { animation: cmvc0_15 8.17s step-end infinite }
+    @keyframes cmvc0_16 { 0%{opacity:0} 5.319%{opacity:1} }
+    #c0_16 { animation: cmvc0_16 8.17s step-end infinite }
+    @keyframes cmvc0_17 { 0%{opacity:0} 5.652%{opacity:1} }
+    #c0_17 { animation: cmvc0_17 8.17s step-end infinite }
+    @keyframes cmvc0_18 { 0%{opacity:0} 5.984%{opacity:1} }
+    #c0_18 { animation: cmvc0_18 8.17s step-end infinite }
+    @keyframes cmvc0_19 { 0%{opacity:0} 6.316%{opacity:1} }
+    #c0_19 { animation: cmvc0_19 8.17s step-end infinite }
+    @keyframes cmvc0_20 { 0%{opacity:0} 6.649%{opacity:1} }
+    #c0_20 { animation: cmvc0_20 8.17s step-end infinite }
+    @keyframes cmvc0_21 { 0%{opacity:0} 6.981%{opacity:1} }
+    #c0_21 { animation: cmvc0_21 8.17s step-end infinite }
+    @keyframes cmvc0_22 { 0%{opacity:0} 7.314%{opacity:1} }
+    #c0_22 { animation: cmvc0_22 8.17s step-end infinite }
+    @keyframes cmvc0_23 { 0%{opacity:0} 7.646%{opacity:1} }
+    #c0_23 { animation: cmvc0_23 8.17s step-end infinite }
+    @keyframes cmvc0_24 { 0%{opacity:0} 7.979%{opacity:1} }
+    #c0_24 { animation: cmvc0_24 8.17s step-end infinite }
+    @keyframes cmvc0_25 { 0%{opacity:0} 8.311%{opacity:1} }
+    #c0_25 { animation: cmvc0_25 8.17s step-end infinite }
+    @keyframes cmvc0_26 { 0%{opacity:0} 8.643%{opacity:1} }
+    #c0_26 { animation: cmvc0_26 8.17s step-end infinite }
+    @keyframes cmvc0_27 { 0%{opacity:0} 8.976%{opacity:1} }
+    #c0_27 { animation: cmvc0_27 8.17s step-end infinite }
+    @keyframes cmvc0_28 { 0%{opacity:0} 9.308%{opacity:1} }
+    #c0_28 { animation: cmvc0_28 8.17s step-end infinite }
+    @keyframes cmvc0_29 { 0%{opacity:0} 9.641%{opacity:1} }
+    #c0_29 { animation: cmvc0_29 8.17s step-end infinite }
+    @keyframes cmvc0_30 { 0%{opacity:0} 9.973%{opacity:1} }
+    #c0_30 { animation: cmvc0_30 8.17s step-end infinite }
+    @keyframes cmvc0_31 { 0%{opacity:0} 10.306%{opacity:1} }
+    #c0_31 { animation: cmvc0_31 8.17s step-end infinite }
+    @keyframes cmvc0_32 { 0%{opacity:0} 10.638%{opacity:1} }
+    #c0_32 { animation: cmvc0_32 8.17s step-end infinite }
+    @keyframes cmvc0_33 { 0%{opacity:0} 10.971%{opacity:1} }
+    #c0_33 { animation: cmvc0_33 8.17s step-end infinite }
+    @keyframes cmvc0_34 { 0%{opacity:0} 11.303%{opacity:1} }
+    #c0_34 { animation: cmvc0_34 8.17s step-end infinite }
+    @keyframes cmvc0_35 { 0%{opacity:0} 11.635%{opacity:1} }
+    #c0_35 { animation: cmvc0_35 8.17s step-end infinite }
+    @keyframes cmvc0_36 { 0%{opacity:0} 11.968%{opacity:1} }
+    #c0_36 { animation: cmvc0_36 8.17s step-end infinite }
+    @keyframes cmvc0_37 { 0%{opacity:0} 12.300%{opacity:1} }
+    #c0_37 { animation: cmvc0_37 8.17s step-end infinite }
+    @keyframes cmvc0_38 { 0%{opacity:0} 12.633%{opacity:1} }
+    #c0_38 { animation: cmvc0_38 8.17s step-end infinite }
+    @keyframes cmvc0_39 { 0%{opacity:0} 12.965%{opacity:1} }
+    #c0_39 { animation: cmvc0_39 8.17s step-end infinite }
+    @keyframes cmvc0_40 { 0%{opacity:0} 13.298%{opacity:1} }
+    #c0_40 { animation: cmvc0_40 8.17s step-end infinite }
+    @keyframes cmvc0_41 { 0%{opacity:0} 13.630%{opacity:1} }
+    #c0_41 { animation: cmvc0_41 8.17s step-end infinite }
+    @keyframes cmvc0_42 { 0%{opacity:0} 13.963%{opacity:1} }
+    #c0_42 { animation: cmvc0_42 8.17s step-end infinite }
+    @keyframes cmvc0_43 { 0%{opacity:0} 14.295%{opacity:1} }
+    #c0_43 { animation: cmvc0_43 8.17s step-end infinite }
+    @keyframes cmvc0_44 { 0%{opacity:0} 14.627%{opacity:1} }
+    #c0_44 { animation: cmvc0_44 8.17s step-end infinite }
+    @keyframes cmvc0_45 { 0%{opacity:0} 14.960%{opacity:1} }
+    #c0_45 { animation: cmvc0_45 8.17s step-end infinite }
+    @keyframes cmvc0_46 { 0%{opacity:0} 15.292%{opacity:1} }
+    #c0_46 { animation: cmvc0_46 8.17s step-end infinite }
+    @keyframes cmvc0_47 { 0%{opacity:0} 15.625%{opacity:1} }
+    #c0_47 { animation: cmvc0_47 8.17s step-end infinite }
+    @keyframes cmvc0_48 { 0%{opacity:0} 15.957%{opacity:1} }
+    #c0_48 { animation: cmvc0_48 8.17s step-end infinite }
+    @keyframes cmvc0_49 { 0%{opacity:0} 16.290%{opacity:1} }
+    #c0_49 { animation: cmvc0_49 8.17s step-end infinite }
+    @keyframes cmvc0_50 { 0%{opacity:0} 16.622%{opacity:1} }
+    #c0_50 { animation: cmvc0_50 8.17s step-end infinite }
+    @keyframes cmvc0_51 { 0%{opacity:0} 16.955%{opacity:1} }
+    #c0_51 { animation: cmvc0_51 8.17s step-end infinite }
+    @keyframes cmvc0_52 { 0%{opacity:0} 17.287%{opacity:1} }
+    #c0_52 { animation: cmvc0_52 8.17s step-end infinite }
+    @keyframes cmvc0_53 { 0%{opacity:0} 17.619%{opacity:1} }
+    #c0_53 { animation: cmvc0_53 8.17s step-end infinite }
+    @keyframes cmvc0_54 { 0%{opacity:0} 17.952%{opacity:1} }
+    #c0_54 { animation: cmvc0_54 8.17s step-end infinite }
+    @keyframes cmvc0_55 { 0%{opacity:0} 18.284%{opacity:1} }
+    #c0_55 { animation: cmvc0_55 8.17s step-end infinite }
+    @keyframes cmvc0_56 { 0%{opacity:0} 18.617%{opacity:1} }
+    #c0_56 { animation: cmvc0_56 8.17s step-end infinite }
+    @keyframes cmvc0_57 { 0%{opacity:0} 18.949%{opacity:1} }
+    #c0_57 { animation: cmvc0_57 8.17s step-end infinite }
+    @keyframes cmvc0_58 { 0%{opacity:0} 19.282%{opacity:1} }
+    #c0_58 { animation: cmvc0_58 8.17s step-end infinite }
+    @keyframes cmvc0_59 { 0%{opacity:0} 19.614%{opacity:1} }
+    #c0_59 { animation: cmvc0_59 8.17s step-end infinite }
+    @keyframes cmvc0_60 { 0%{opacity:0} 19.947%{opacity:1} }
+    #c0_60 { animation: cmvc0_60 8.17s step-end infinite }
+    @keyframes cmvc0_61 { 0%{opacity:0} 20.279%{opacity:1} }
+    #c0_61 { animation: cmvc0_61 8.17s step-end infinite }
+    @keyframes cmvc0_62 { 0%{opacity:0} 20.611%{opacity:1} }
+    #c0_62 { animation: cmvc0_62 8.17s step-end infinite }
+    @keyframes cmvc0_63 { 0%{opacity:0} 20.944%{opacity:1} }
+    #c0_63 { animation: cmvc0_63 8.17s step-end infinite }
+    @keyframes cmvc0_64 { 0%{opacity:0} 21.276%{opacity:1} }
+    #c0_64 { animation: cmvc0_64 8.17s step-end infinite }
+    @keyframes cmvc0_65 { 0%{opacity:0} 21.609%{opacity:1} }
+    #c0_65 { animation: cmvc0_65 8.17s step-end infinite }
+    @keyframes cmvc0_66 { 0%{opacity:0} 21.941%{opacity:1} }
+    #c0_66 { animation: cmvc0_66 8.17s step-end infinite }
+    @keyframes cmvc0_67 { 0%{opacity:0} 22.274%{opacity:1} }
+    #c0_67 { animation: cmvc0_67 8.17s step-end infinite }
+    @keyframes cmvc0_68 { 0%{opacity:0} 22.606%{opacity:1} }
+    #c0_68 { animation: cmvc0_68 8.17s step-end infinite }
+    @keyframes cmvc0_69 { 0%{opacity:0} 22.938%{opacity:1} }
+    #c0_69 { animation: cmvc0_69 8.17s step-end infinite }
+    @keyframes cmvc0_70 { 0%{opacity:0} 23.271%{opacity:1} }
+    #c0_70 { animation: cmvc0_70 8.17s step-end infinite }
+    @keyframes cmvc0_71 { 0%{opacity:0} 23.603%{opacity:1} }
+    #c0_71 { animation: cmvc0_71 8.17s step-end infinite }
+    @keyframes cmvc0_72 { 0%{opacity:0} 23.936%{opacity:1} }
+    #c0_72 { animation: cmvc0_72 8.17s step-end infinite }
+    @keyframes cmvc0_73 { 0%{opacity:0} 24.268%{opacity:1} }
+    #c0_73 { animation: cmvc0_73 8.17s step-end infinite }
+    @keyframes cmvc0_74 { 0%{opacity:0} 24.601%{opacity:1} }
+    #c0_74 { animation: cmvc0_74 8.17s step-end infinite }
+    @keyframes cmvc0_75 { 0%{opacity:0} 24.933%{opacity:1} }
+    #c0_75 { animation: cmvc0_75 8.17s step-end infinite }
+    @keyframes cmvc0_76 { 0%{opacity:0} 25.266%{opacity:1} }
+    #c0_76 { animation: cmvc0_76 8.17s step-end infinite }
+    @keyframes cmvc0_77 { 0%{opacity:0} 25.598%{opacity:1} }
+    #c0_77 { animation: cmvc0_77 8.17s step-end infinite }
+    @keyframes cmvc0_78 { 0%{opacity:0} 25.930%{opacity:1} }
+    #c0_78 { animation: cmvc0_78 8.17s step-end infinite }
+    @keyframes cmvc0_79 { 0%{opacity:0} 26.263%{opacity:1} }
+    #c0_79 { animation: cmvc0_79 8.17s step-end infinite }
+    @keyframes cmvc0_80 { 0%{opacity:0} 26.595%{opacity:1} }
+    #c0_80 { animation: cmvc0_80 8.17s step-end infinite }
+    @keyframes cmvc0_81 { 0%{opacity:0} 26.928%{opacity:1} }
+    #c0_81 { animation: cmvc0_81 8.17s step-end infinite }
+    @keyframes cmvk0_0 { 0%{opacity:0} 0.000%{opacity:1} 0.332%{opacity:0} }
+    #k0_0 { animation: cmvk0_0 8.17s step-end infinite }
+    @keyframes cmvk0_1 { 0%{opacity:0} 0.332%{opacity:1} 0.665%{opacity:0} }
+    #k0_1 { animation: cmvk0_1 8.17s step-end infinite }
+    @keyframes cmvk0_2 { 0%{opacity:0} 0.665%{opacity:1} 0.997%{opacity:0} }
+    #k0_2 { animation: cmvk0_2 8.17s step-end infinite }
+    @keyframes cmvk0_3 { 0%{opacity:0} 0.997%{opacity:1} 1.330%{opacity:0} }
+    #k0_3 { animation: cmvk0_3 8.17s step-end infinite }
+    @keyframes cmvk0_4 { 0%{opacity:0} 1.330%{opacity:1} 1.662%{opacity:0} }
+    #k0_4 { animation: cmvk0_4 8.17s step-end infinite }
+    @keyframes cmvk0_5 { 0%{opacity:0} 1.662%{opacity:1} 1.995%{opacity:0} }
+    #k0_5 { animation: cmvk0_5 8.17s step-end infinite }
+    @keyframes cmvk0_6 { 0%{opacity:0} 1.995%{opacity:1} 2.327%{opacity:0} }
+    #k0_6 { animation: cmvk0_6 8.17s step-end infinite }
+    @keyframes cmvk0_7 { 0%{opacity:0} 2.327%{opacity:1} 2.660%{opacity:0} }
+    #k0_7 { animation: cmvk0_7 8.17s step-end infinite }
+    @keyframes cmvk0_8 { 0%{opacity:0} 2.660%{opacity:1} 2.992%{opacity:0} }
+    #k0_8 { animation: cmvk0_8 8.17s step-end infinite }
+    @keyframes cmvk0_9 { 0%{opacity:0} 2.992%{opacity:1} 3.324%{opacity:0} }
+    #k0_9 { animation: cmvk0_9 8.17s step-end infinite }
+    @keyframes cmvk0_10 { 0%{opacity:0} 3.324%{opacity:1} 3.657%{opacity:0} }
+    #k0_10 { animation: cmvk0_10 8.17s step-end infinite }
+    @keyframes cmvk0_11 { 0%{opacity:0} 3.657%{opacity:1} 3.989%{opacity:0} }
+    #k0_11 { animation: cmvk0_11 8.17s step-end infinite }
+    @keyframes cmvk0_12 { 0%{opacity:0} 3.989%{opacity:1} 4.322%{opacity:0} }
+    #k0_12 { animation: cmvk0_12 8.17s step-end infinite }
+    @keyframes cmvk0_13 { 0%{opacity:0} 4.322%{opacity:1} 4.654%{opacity:0} }
+    #k0_13 { animation: cmvk0_13 8.17s step-end infinite }
+    @keyframes cmvk0_14 { 0%{opacity:0} 4.654%{opacity:1} 4.987%{opacity:0} }
+    #k0_14 { animation: cmvk0_14 8.17s step-end infinite }
+    @keyframes cmvk0_15 { 0%{opacity:0} 4.987%{opacity:1} 5.319%{opacity:0} }
+    #k0_15 { animation: cmvk0_15 8.17s step-end infinite }
+    @keyframes cmvk0_16 { 0%{opacity:0} 5.319%{opacity:1} 5.652%{opacity:0} }
+    #k0_16 { animation: cmvk0_16 8.17s step-end infinite }
+    @keyframes cmvk0_17 { 0%{opacity:0} 5.652%{opacity:1} 5.984%{opacity:0} }
+    #k0_17 { animation: cmvk0_17 8.17s step-end infinite }
+    @keyframes cmvk0_18 { 0%{opacity:0} 5.984%{opacity:1} 6.316%{opacity:0} }
+    #k0_18 { animation: cmvk0_18 8.17s step-end infinite }
+    @keyframes cmvk0_19 { 0%{opacity:0} 6.316%{opacity:1} 6.649%{opacity:0} }
+    #k0_19 { animation: cmvk0_19 8.17s step-end infinite }
+    @keyframes cmvk0_20 { 0%{opacity:0} 6.649%{opacity:1} 6.981%{opacity:0} }
+    #k0_20 { animation: cmvk0_20 8.17s step-end infinite }
+    @keyframes cmvk0_21 { 0%{opacity:0} 6.981%{opacity:1} 7.314%{opacity:0} }
+    #k0_21 { animation: cmvk0_21 8.17s step-end infinite }
+    @keyframes cmvk0_22 { 0%{opacity:0} 7.314%{opacity:1} 7.646%{opacity:0} }
+    #k0_22 { animation: cmvk0_22 8.17s step-end infinite }
+    @keyframes cmvk0_23 { 0%{opacity:0} 7.646%{opacity:1} 7.979%{opacity:0} }
+    #k0_23 { animation: cmvk0_23 8.17s step-end infinite }
+    @keyframes cmvk0_24 { 0%{opacity:0} 7.979%{opacity:1} 8.311%{opacity:0} }
+    #k0_24 { animation: cmvk0_24 8.17s step-end infinite }
+    @keyframes cmvk0_25 { 0%{opacity:0} 8.311%{opacity:1} 8.643%{opacity:0} }
+    #k0_25 { animation: cmvk0_25 8.17s step-end infinite }
+    @keyframes cmvk0_26 { 0%{opacity:0} 8.643%{opacity:1} 8.976%{opacity:0} }
+    #k0_26 { animation: cmvk0_26 8.17s step-end infinite }
+    @keyframes cmvk0_27 { 0%{opacity:0} 8.976%{opacity:1} 9.308%{opacity:0} }
+    #k0_27 { animation: cmvk0_27 8.17s step-end infinite }
+    @keyframes cmvk0_28 { 0%{opacity:0} 9.308%{opacity:1} 9.641%{opacity:0} }
+    #k0_28 { animation: cmvk0_28 8.17s step-end infinite }
+    @keyframes cmvk0_29 { 0%{opacity:0} 9.641%{opacity:1} 9.973%{opacity:0} }
+    #k0_29 { animation: cmvk0_29 8.17s step-end infinite }
+    @keyframes cmvk0_30 { 0%{opacity:0} 9.973%{opacity:1} 10.306%{opacity:0} }
+    #k0_30 { animation: cmvk0_30 8.17s step-end infinite }
+    @keyframes cmvk0_31 { 0%{opacity:0} 10.306%{opacity:1} 10.638%{opacity:0} }
+    #k0_31 { animation: cmvk0_31 8.17s step-end infinite }
+    @keyframes cmvk0_32 { 0%{opacity:0} 10.638%{opacity:1} 10.971%{opacity:0} }
+    #k0_32 { animation: cmvk0_32 8.17s step-end infinite }
+    @keyframes cmvk0_33 { 0%{opacity:0} 10.971%{opacity:1} 11.303%{opacity:0} }
+    #k0_33 { animation: cmvk0_33 8.17s step-end infinite }
+    @keyframes cmvk0_34 { 0%{opacity:0} 11.303%{opacity:1} 11.635%{opacity:0} }
+    #k0_34 { animation: cmvk0_34 8.17s step-end infinite }
+    @keyframes cmvk0_35 { 0%{opacity:0} 11.635%{opacity:1} 11.968%{opacity:0} }
+    #k0_35 { animation: cmvk0_35 8.17s step-end infinite }
+    @keyframes cmvk0_36 { 0%{opacity:0} 11.968%{opacity:1} 12.300%{opacity:0} }
+    #k0_36 { animation: cmvk0_36 8.17s step-end infinite }
+    @keyframes cmvk0_37 { 0%{opacity:0} 12.300%{opacity:1} 12.633%{opacity:0} }
+    #k0_37 { animation: cmvk0_37 8.17s step-end infinite }
+    @keyframes cmvk0_38 { 0%{opacity:0} 12.633%{opacity:1} 12.965%{opacity:0} }
+    #k0_38 { animation: cmvk0_38 8.17s step-end infinite }
+    @keyframes cmvk0_39 { 0%{opacity:0} 12.965%{opacity:1} 13.298%{opacity:0} }
+    #k0_39 { animation: cmvk0_39 8.17s step-end infinite }
+    @keyframes cmvk0_40 { 0%{opacity:0} 13.298%{opacity:1} 13.630%{opacity:0} }
+    #k0_40 { animation: cmvk0_40 8.17s step-end infinite }
+    @keyframes cmvk0_41 { 0%{opacity:0} 13.630%{opacity:1} 13.963%{opacity:0} }
+    #k0_41 { animation: cmvk0_41 8.17s step-end infinite }
+    @keyframes cmvk0_42 { 0%{opacity:0} 13.963%{opacity:1} 14.295%{opacity:0} }
+    #k0_42 { animation: cmvk0_42 8.17s step-end infinite }
+    @keyframes cmvk0_43 { 0%{opacity:0} 14.295%{opacity:1} 14.627%{opacity:0} }
+    #k0_43 { animation: cmvk0_43 8.17s step-end infinite }
+    @keyframes cmvk0_44 { 0%{opacity:0} 14.627%{opacity:1} 14.960%{opacity:0} }
+    #k0_44 { animation: cmvk0_44 8.17s step-end infinite }
+    @keyframes cmvk0_45 { 0%{opacity:0} 14.960%{opacity:1} 15.292%{opacity:0} }
+    #k0_45 { animation: cmvk0_45 8.17s step-end infinite }
+    @keyframes cmvk0_46 { 0%{opacity:0} 15.292%{opacity:1} 15.625%{opacity:0} }
+    #k0_46 { animation: cmvk0_46 8.17s step-end infinite }
+    @keyframes cmvk0_47 { 0%{opacity:0} 15.625%{opacity:1} 15.957%{opacity:0} }
+    #k0_47 { animation: cmvk0_47 8.17s step-end infinite }
+    @keyframes cmvk0_48 { 0%{opacity:0} 15.957%{opacity:1} 16.290%{opacity:0} }
+    #k0_48 { animation: cmvk0_48 8.17s step-end infinite }
+    @keyframes cmvk0_49 { 0%{opacity:0} 16.290%{opacity:1} 16.622%{opacity:0} }
+    #k0_49 { animation: cmvk0_49 8.17s step-end infinite }
+    @keyframes cmvk0_50 { 0%{opacity:0} 16.622%{opacity:1} 16.955%{opacity:0} }
+    #k0_50 { animation: cmvk0_50 8.17s step-end infinite }
+    @keyframes cmvk0_51 { 0%{opacity:0} 16.955%{opacity:1} 17.287%{opacity:0} }
+    #k0_51 { animation: cmvk0_51 8.17s step-end infinite }
+    @keyframes cmvk0_52 { 0%{opacity:0} 17.287%{opacity:1} 17.619%{opacity:0} }
+    #k0_52 { animation: cmvk0_52 8.17s step-end infinite }
+    @keyframes cmvk0_53 { 0%{opacity:0} 17.619%{opacity:1} 17.952%{opacity:0} }
+    #k0_53 { animation: cmvk0_53 8.17s step-end infinite }
+    @keyframes cmvk0_54 { 0%{opacity:0} 17.952%{opacity:1} 18.284%{opacity:0} }
+    #k0_54 { animation: cmvk0_54 8.17s step-end infinite }
+    @keyframes cmvk0_55 { 0%{opacity:0} 18.284%{opacity:1} 18.617%{opacity:0} }
+    #k0_55 { animation: cmvk0_55 8.17s step-end infinite }
+    @keyframes cmvk0_56 { 0%{opacity:0} 18.617%{opacity:1} 18.949%{opacity:0} }
+    #k0_56 { animation: cmvk0_56 8.17s step-end infinite }
+    @keyframes cmvk0_57 { 0%{opacity:0} 18.949%{opacity:1} 19.282%{opacity:0} }
+    #k0_57 { animation: cmvk0_57 8.17s step-end infinite }
+    @keyframes cmvk0_58 { 0%{opacity:0} 19.282%{opacity:1} 19.614%{opacity:0} }
+    #k0_58 { animation: cmvk0_58 8.17s step-end infinite }
+    @keyframes cmvk0_59 { 0%{opacity:0} 19.614%{opacity:1} 19.947%{opacity:0} }
+    #k0_59 { animation: cmvk0_59 8.17s step-end infinite }
+    @keyframes cmvk0_60 { 0%{opacity:0} 19.947%{opacity:1} 20.279%{opacity:0} }
+    #k0_60 { animation: cmvk0_60 8.17s step-end infinite }
+    @keyframes cmvk0_61 { 0%{opacity:0} 20.279%{opacity:1} 20.611%{opacity:0} }
+    #k0_61 { animation: cmvk0_61 8.17s step-end infinite }
+    @keyframes cmvk0_62 { 0%{opacity:0} 20.611%{opacity:1} 20.944%{opacity:0} }
+    #k0_62 { animation: cmvk0_62 8.17s step-end infinite }
+    @keyframes cmvk0_63 { 0%{opacity:0} 20.944%{opacity:1} 21.276%{opacity:0} }
+    #k0_63 { animation: cmvk0_63 8.17s step-end infinite }
+    @keyframes cmvk0_64 { 0%{opacity:0} 21.276%{opacity:1} 21.609%{opacity:0} }
+    #k0_64 { animation: cmvk0_64 8.17s step-end infinite }
+    @keyframes cmvk0_65 { 0%{opacity:0} 21.609%{opacity:1} 21.941%{opacity:0} }
+    #k0_65 { animation: cmvk0_65 8.17s step-end infinite }
+    @keyframes cmvk0_66 { 0%{opacity:0} 21.941%{opacity:1} 22.274%{opacity:0} }
+    #k0_66 { animation: cmvk0_66 8.17s step-end infinite }
+    @keyframes cmvk0_67 { 0%{opacity:0} 22.274%{opacity:1} 22.606%{opacity:0} }
+    #k0_67 { animation: cmvk0_67 8.17s step-end infinite }
+    @keyframes cmvk0_68 { 0%{opacity:0} 22.606%{opacity:1} 22.938%{opacity:0} }
+    #k0_68 { animation: cmvk0_68 8.17s step-end infinite }
+    @keyframes cmvk0_69 { 0%{opacity:0} 22.938%{opacity:1} 23.271%{opacity:0} }
+    #k0_69 { animation: cmvk0_69 8.17s step-end infinite }
+    @keyframes cmvk0_70 { 0%{opacity:0} 23.271%{opacity:1} 23.603%{opacity:0} }
+    #k0_70 { animation: cmvk0_70 8.17s step-end infinite }
+    @keyframes cmvk0_71 { 0%{opacity:0} 23.603%{opacity:1} 23.936%{opacity:0} }
+    #k0_71 { animation: cmvk0_71 8.17s step-end infinite }
+    @keyframes cmvk0_72 { 0%{opacity:0} 23.936%{opacity:1} 24.268%{opacity:0} }
+    #k0_72 { animation: cmvk0_72 8.17s step-end infinite }
+    @keyframes cmvk0_73 { 0%{opacity:0} 24.268%{opacity:1} 24.601%{opacity:0} }
+    #k0_73 { animation: cmvk0_73 8.17s step-end infinite }
+    @keyframes cmvk0_74 { 0%{opacity:0} 24.601%{opacity:1} 24.933%{opacity:0} }
+    #k0_74 { animation: cmvk0_74 8.17s step-end infinite }
+    @keyframes cmvk0_75 { 0%{opacity:0} 24.933%{opacity:1} 25.266%{opacity:0} }
+    #k0_75 { animation: cmvk0_75 8.17s step-end infinite }
+    @keyframes cmvk0_76 { 0%{opacity:0} 25.266%{opacity:1} 25.598%{opacity:0} }
+    #k0_76 { animation: cmvk0_76 8.17s step-end infinite }
+    @keyframes cmvk0_77 { 0%{opacity:0} 25.598%{opacity:1} 25.930%{opacity:0} }
+    #k0_77 { animation: cmvk0_77 8.17s step-end infinite }
+    @keyframes cmvk0_78 { 0%{opacity:0} 25.930%{opacity:1} 26.263%{opacity:0} }
+    #k0_78 { animation: cmvk0_78 8.17s step-end infinite }
+    @keyframes cmvk0_79 { 0%{opacity:0} 26.263%{opacity:1} 26.595%{opacity:0} }
+    #k0_79 { animation: cmvk0_79 8.17s step-end infinite }
+    @keyframes cmvk0_80 { 0%{opacity:0} 26.595%{opacity:1} 26.928%{opacity:0} }
+    #k0_80 { animation: cmvk0_80 8.17s step-end infinite }
+    @keyframes cmvk0_81 { 0%{opacity:0} 26.928%{opacity:1} 31.212%{opacity:0} }
+    #k0_81 { animation: cmvk0_81 8.17s step-end infinite }
+    @keyframes cmv2 { 0%{opacity:0} 31.946%{opacity:1} }
+    #l2 { animation: cmv2 8.17s step-end infinite }
+    @keyframes cmv4 { 0%{opacity:0} 33.415%{opacity:1} }
+    #l4 { animation: cmv4 8.17s step-end infinite }
+    @keyframes cmv5 { 0%{opacity:0} 34.149%{opacity:1} }
+    #l5 { animation: cmv5 8.17s step-end infinite }
+    @keyframes cmv6 { 0%{opacity:0} 34.884%{opacity:1} }
+    #l6 { animation: cmv6 8.17s step-end infinite }
+    @keyframes cmv7 { 0%{opacity:0} 35.618%{opacity:1} }
+    #l7 { animation: cmv7 8.17s step-end infinite }
+    @keyframes cmv8 { 0%{opacity:0} 36.353%{opacity:1} }
+    #l8 { animation: cmv8 8.17s step-end infinite }
+    @keyframes cmv10 { 0%{opacity:0} 37.821%{opacity:1} }
+    #l10 { animation: cmv10 8.17s step-end infinite }
+    @keyframes cmv11 { 0%{opacity:0} 38.556%{opacity:1} }
+    #l11 { animation: cmv11 8.17s step-end infinite }
+    @keyframes cmv12 { 0%{opacity:0} 39.290%{opacity:1} }
+    #l12 { animation: cmv12 8.17s step-end infinite }
+    @keyframes cmv13 { 0%{opacity:0} 40.024%{opacity:1} }
+    #l13 { animation: cmv13 8.17s step-end infinite }
+    @keyframes cmv14 { 0%{opacity:0} 40.759%{opacity:1} }
+    #l14 { animation: cmv14 8.17s step-end infinite }
+    @keyframes cmv15 { 0%{opacity:0} 41.493%{opacity:1} }
+    #l15 { animation: cmv15 8.17s step-end infinite }
+    @keyframes cmv16 { 0%{opacity:0} 42.228%{opacity:1} }
+    #l16 { animation: cmv16 8.17s step-end infinite }
+    @keyframes cmv17 { 0%{opacity:0} 42.962%{opacity:1} }
+    #l17 { animation: cmv17 8.17s step-end infinite }
+    @keyframes cmv18 { 0%{opacity:0} 43.696%{opacity:1} }
+    #l18 { animation: cmv18 8.17s step-end infinite }
+    @keyframes cmv20 { 0%{opacity:0} 45.165%{opacity:1} }
+    #l20 { animation: cmv20 8.17s step-end infinite }
+    @keyframes cmv21 { 0%{opacity:0} 45.900%{opacity:1} }
+    #l21 { animation: cmv21 8.17s step-end infinite }
+    @keyframes cmv22 { 0%{opacity:0} 46.634%{opacity:1} }
+    #l22 { animation: cmv22 8.17s step-end infinite }
+    @keyframes cmv24 { 0%{opacity:0} 48.103%{opacity:1} }
+    #l24 { animation: cmv24 8.17s step-end infinite }
+    @keyframes cmv25 { 0%{opacity:0} 48.837%{opacity:1} }
+    #l25 { animation: cmv25 8.17s step-end infinite }
+    @keyframes cmv26 { 0%{opacity:0} 49.572%{opacity:1} }
+    #l26 { animation: cmv26 8.17s step-end infinite }
+    @keyframes cmv27 { 0%{opacity:0} 50.306%{opacity:1} }
+    #l27 { animation: cmv27 8.17s step-end infinite }
+    @media (prefers-reduced-motion: reduce) {
+      text.l { animation: none !important; opacity: 1 }
+    }
+  </style>
+  <text id="p0" class="l" x="20" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#9399b2">%</text>
+  <text id="c0_1" class="l" x="35.70" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">c</text>
+  <text id="c0_2" class="l" x="43.55" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">l</text>
+  <text id="c0_3" class="l" x="51.40" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">a</text>
+  <text id="c0_4" class="l" x="59.25" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">u</text>
+  <text id="c0_5" class="l" x="67.10" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">d</text>
+  <text id="c0_6" class="l" x="74.95" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">e</text>
+  <text id="c0_7" class="l" x="82.80" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">-</text>
+  <text id="c0_8" class="l" x="90.65" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">m</text>
+  <text id="c0_9" class="l" x="98.50" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">v</text>
+  <text id="c0_10" class="l" x="106.35" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4"> </text>
+  <text id="c0_11" class="l" x="114.20" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">-</text>
+  <text id="c0_12" class="l" x="122.05" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">-</text>
+  <text id="c0_13" class="l" x="129.90" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">e</text>
+  <text id="c0_14" class="l" x="137.75" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">x</text>
+  <text id="c0_15" class="l" x="145.60" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">t</text>
+  <text id="c0_16" class="l" x="153.45" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">r</text>
+  <text id="c0_17" class="l" x="161.30" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">a</text>
+  <text id="c0_18" class="l" x="169.15" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">c</text>
+  <text id="c0_19" class="l" x="177.00" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">t</text>
+  <text id="c0_20" class="l" x="184.85" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4"> </text>
+  <text id="c0_21" class="l" x="192.70" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">-</text>
+  <text id="c0_22" class="l" x="200.55" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">R</text>
+  <text id="c0_23" class="l" x="208.40" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4"> </text>
+  <text id="c0_24" class="l" x="216.25" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">-</text>
+  <text id="c0_25" class="l" x="224.10" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">-</text>
+  <text id="c0_26" class="l" x="231.95" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">n</text>
+  <text id="c0_27" class="l" x="239.80" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">o</text>
+  <text id="c0_28" class="l" x="247.65" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">-</text>
+  <text id="c0_29" class="l" x="255.50" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">b</text>
+  <text id="c0_30" class="l" x="263.35" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">r</text>
+  <text id="c0_31" class="l" x="271.20" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">o</text>
+  <text id="c0_32" class="l" x="279.05" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">w</text>
+  <text id="c0_33" class="l" x="286.90" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">s</text>
+  <text id="c0_34" class="l" x="294.75" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">e</text>
+  <text id="c0_35" class="l" x="302.60" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4"> </text>
+  <text id="c0_36" class="l" x="310.45" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">-</text>
+  <text id="c0_37" class="l" x="318.30" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">-</text>
+  <text id="c0_38" class="l" x="326.15" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">s</text>
+  <text id="c0_39" class="l" x="334.00" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">e</text>
+  <text id="c0_40" class="l" x="341.85" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">a</text>
+  <text id="c0_41" class="l" x="349.70" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">r</text>
+  <text id="c0_42" class="l" x="357.55" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">c</text>
+  <text id="c0_43" class="l" x="365.40" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">h</text>
+  <text id="c0_44" class="l" x="373.25" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4"> </text>
+  <text id="c0_45" class="l" x="381.10" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">'</text>
+  <text id="c0_46" class="l" x="388.95" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">i</text>
+  <text id="c0_47" class="l" x="396.80" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">m</text>
+  <text id="c0_48" class="l" x="404.65" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">a</text>
+  <text id="c0_49" class="l" x="412.50" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">g</text>
+  <text id="c0_50" class="l" x="420.35" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">e</text>
+  <text id="c0_51" class="l" x="428.20" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4"> </text>
+  <text id="c0_52" class="l" x="436.05" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">r</text>
+  <text id="c0_53" class="l" x="443.90" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">e</text>
+  <text id="c0_54" class="l" x="451.75" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">c</text>
+  <text id="c0_55" class="l" x="459.60" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">o</text>
+  <text id="c0_56" class="l" x="467.45" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">v</text>
+  <text id="c0_57" class="l" x="475.30" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">e</text>
+  <text id="c0_58" class="l" x="483.15" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">r</text>
+  <text id="c0_59" class="l" x="491.00" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">y</text>
+  <text id="c0_60" class="l" x="498.85" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">'</text>
+  <text id="c0_61" class="l" x="506.70" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4"> </text>
+  <text id="c0_62" class="l" x="514.55" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">~</text>
+  <text id="c0_63" class="l" x="522.40" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">/</text>
+  <text id="c0_64" class="l" x="530.25" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">c</text>
+  <text id="c0_65" class="l" x="538.10" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">o</text>
+  <text id="c0_66" class="l" x="545.95" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">d</text>
+  <text id="c0_67" class="l" x="553.80" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">e</text>
+  <text id="c0_68" class="l" x="561.65" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4"> </text>
+  <text id="c0_69" class="l" x="569.50" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">~</text>
+  <text id="c0_70" class="l" x="577.35" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">/</text>
+  <text id="c0_71" class="l" x="585.20" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">c</text>
+  <text id="c0_72" class="l" x="593.05" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">o</text>
+  <text id="c0_73" class="l" x="600.90" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">d</text>
+  <text id="c0_74" class="l" x="608.75" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">e</text>
+  <text id="c0_75" class="l" x="616.60" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">/</text>
+  <text id="c0_76" class="l" x="624.45" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">l</text>
+  <text id="c0_77" class="l" x="632.30" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">i</text>
+  <text id="c0_78" class="l" x="640.15" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">p</text>
+  <text id="c0_79" class="l" x="648.00" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">s</text>
+  <text id="c0_80" class="l" x="655.85" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">u</text>
+  <text id="c0_81" class="l" x="663.70" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" font-weight="700" xml:space="preserve" fill="#cdd6f4">m</text>
+  <text id="k0_0" class="l" x="35.70" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_1" class="l" x="43.55" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_2" class="l" x="51.40" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_3" class="l" x="59.25" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_4" class="l" x="67.10" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_5" class="l" x="74.95" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_6" class="l" x="82.80" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_7" class="l" x="90.65" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_8" class="l" x="98.50" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_9" class="l" x="106.35" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_10" class="l" x="114.20" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_11" class="l" x="122.05" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_12" class="l" x="129.90" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_13" class="l" x="137.75" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_14" class="l" x="145.60" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_15" class="l" x="153.45" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_16" class="l" x="161.30" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_17" class="l" x="169.15" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_18" class="l" x="177.00" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_19" class="l" x="184.85" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_20" class="l" x="192.70" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_21" class="l" x="200.55" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_22" class="l" x="208.40" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_23" class="l" x="216.25" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_24" class="l" x="224.10" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_25" class="l" x="231.95" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_26" class="l" x="239.80" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_27" class="l" x="247.65" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_28" class="l" x="255.50" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_29" class="l" x="263.35" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_30" class="l" x="271.20" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_31" class="l" x="279.05" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_32" class="l" x="286.90" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_33" class="l" x="294.75" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_34" class="l" x="302.60" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_35" class="l" x="310.45" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_36" class="l" x="318.30" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_37" class="l" x="326.15" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_38" class="l" x="334.00" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_39" class="l" x="341.85" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_40" class="l" x="349.70" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_41" class="l" x="357.55" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_42" class="l" x="365.40" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_43" class="l" x="373.25" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_44" class="l" x="381.10" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_45" class="l" x="388.95" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_46" class="l" x="396.80" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_47" class="l" x="404.65" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_48" class="l" x="412.50" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_49" class="l" x="420.35" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_50" class="l" x="428.20" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_51" class="l" x="436.05" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_52" class="l" x="443.90" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_53" class="l" x="451.75" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_54" class="l" x="459.60" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_55" class="l" x="467.45" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_56" class="l" x="475.30" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_57" class="l" x="483.15" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_58" class="l" x="491.00" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_59" class="l" x="498.85" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_60" class="l" x="506.70" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_61" class="l" x="514.55" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_62" class="l" x="522.40" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_63" class="l" x="530.25" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_64" class="l" x="538.10" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_65" class="l" x="545.95" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_66" class="l" x="553.80" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_67" class="l" x="561.65" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_68" class="l" x="569.50" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_69" class="l" x="577.35" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_70" class="l" x="585.20" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_71" class="l" x="593.05" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_72" class="l" x="600.90" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_73" class="l" x="608.75" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_74" class="l" x="616.60" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_75" class="l" x="624.45" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_76" class="l" x="632.30" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_77" class="l" x="640.15" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_78" class="l" x="648.00" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_79" class="l" x="655.85" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_80" class="l" x="663.70" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="k0_81" class="l" x="671.55" y="57" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4">█</text>
+  <text id="l2" class="l" x="20" y="97" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4"><tspan x="20.00 27.85 35.70 43.55 51.40 59.25 67.10 74.95 82.80 90.65 98.50 106.35 114.20 122.05 129.90 137.75 145.60 153.45 161.30 169.15 177.00" font-weight="700">sessions homed under </tspan><tspan x="184.85 192.70 200.55 208.40 216.25 224.10 231.95 239.80 247.65 255.50 263.35 271.20 279.05 286.90 294.75 302.60" fill="#00c5c7">/Users/demo/code</tspan><tspan x="310.45 318.30 326.15 334.00 341.85 349.70 357.55 365.40 373.25 381.10 388.95 396.80" font-weight="700"> mentioning </tspan><tspan x="404.65 412.50 420.35 428.20 436.05 443.90 451.75 459.60 467.45 475.30 483.15 491.00 498.85 506.70" font-weight="700">image recovery</tspan><tspan x="514.55 522.40 530.25 538.10 545.95 553.80 561.65 569.50 577.35 585.20" fill="#9399b2"> (2 found)</tspan></text>
+  <text id="l4" class="l" x="20" y="137" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4"><tspan x="20.00 27.85 35.70 43.55 51.40 59.25 67.10 74.95 82.80 90.65 98.50 106.35 114.20 122.05 129.90 137.75 145.60 153.45 161.30 169.15 177.00 184.85 192.70 200.55 208.40 216.25 224.10" font-weight="700">sessions available to move:</tspan></text>
+  <text id="l5" class="l" x="20" y="157" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4"><tspan x="20.00 27.85">  </tspan><tspan x="35.70 43.55" font-weight="700"> 1</tspan><tspan x="51.40 59.25 67.10 74.95 82.80 90.65 98.50 106.35 114.20 122.05 129.90 137.75 145.60 153.45 161.30 169.15 177.00 184.85 192.70 200.55 208.40 216.25 224.10 231.95 239.80 247.65 255.50 263.35 271.20 279.05 286.90 294.75 302.60 310.45 318.30 326.15 334.00 341.85 349.70 357.55 365.40 373.25 381.10 388.95 396.80 404.65 412.50 420.35 428.20 436.05 443.90 451.75 459.60 467.45 475.30 483.15 491.00 498.85 506.70 514.55 522.40 530.25 538.10 545.95 553.80 561.65 569.50 577.35 585.20 593.05 600.90 608.75 616.60 624.45 632.30 640.15 648.00 655.85 663.70 671.55 679.40 687.25 695.10 702.95 710.80 718.65 726.50 734.35 742.20 750.05 757.90 765.75 773.60 781.45 789.30 797.15 805.00 812.85 820.70 828.55 836.40 844.25 852.10 859.95">  2026-08-14 14:20  d422663b  ./          recover the app-cache images   ↦ image recovery chokes on HEIC</tspan></text>
+  <text id="l6" class="l" x="20" y="177" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4"><tspan x="20.00 27.85">  </tspan><tspan x="35.70 43.55" font-weight="700"> 2</tspan><tspan x="51.40 59.25 67.10 74.95 82.80 90.65 98.50 106.35 114.20 122.05 129.90 137.75 145.60 153.45 161.30 169.15 177.00 184.85 192.70 200.55 208.40 216.25 224.10 231.95 239.80 247.65 255.50 263.35 271.20 279.05 286.90 294.75 302.60 310.45 318.30 326.15 334.00 341.85 349.70 357.55 365.40 373.25 381.10 388.95 396.80 404.65 412.50 420.35 428.20 436.05 443.90 451.75 459.60 467.45 475.30 483.15 491.00 498.85 506.70 514.55 522.40 530.25 538.10 545.95 553.80 561.65 569.50 577.35 585.20 593.05 600.90 608.75 616.60 624.45 632.30 640.15">  2026-08-13 13:40  833e1739  ./scratch/  image recovery notes from the dump</tspan></text>
+  <text id="l7" class="l" x="20" y="197" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4"><tspan x="20.00 27.85 35.70 43.55 51.40 59.25 67.10 74.95 82.80 90.65 98.50 106.35 114.20 122.05 129.90 137.75 145.60 153.45 161.30 169.15 177.00 184.85 192.70 200.55 208.40 216.25 224.10 231.95 239.80 247.65 255.50 263.35 271.20 279.05 286.90 294.75 302.60 310.45 318.30 326.15 334.00 341.85 349.70 357.55 365.40 373.25 381.10 388.95 396.80 404.65 412.50 420.35 428.20 436.05 443.90 451.75 459.60" fill="#9399b2">  pick one or more: 1 · 1,3 · 2-4 · all · empty to cancel</tspan></text>
+  <text id="l8" class="l" x="20" y="217" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4"><tspan x="20.00 27.85 35.70 43.55 51.40 59.25 67.10 74.95 82.80 90.65 98.50" font-weight="700">selection: </tspan><tspan x="106.35" fill="#58e790" font-weight="700">2</tspan></text>
+  <text id="l10" class="l" x="20" y="257" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4"><tspan x="20.00 27.85 35.70 43.55 51.40 59.25 67.10 74.95 82.80 90.65 98.50 106.35 114.20 122.05 129.90 137.75 145.60" font-weight="700">about to re-home </tspan><tspan x="153.45" font-weight="700">1</tspan><tspan x="161.30 169.15 177.00 184.85 192.70 200.55 208.40 216.25 224.10"> session:</tspan></text>
+  <text id="l11" class="l" x="20" y="277" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4"><tspan x="20.00 27.85 35.70 43.55 51.40 59.25 67.10 74.95" fill="#9399b2">  from  </tspan><tspan x="82.80 90.65 98.50 106.35 114.20 122.05 129.90 137.75 145.60 153.45 161.30 169.15 177.00 184.85 192.70 200.55" fill="#00c5c7">/Users/demo/code</tspan><tspan x="208.40 216.25 224.10 231.95 239.80 247.65 255.50 263.35 271.20 279.05" fill="#9399b2"> and below</tspan></text>
+  <text id="l12" class="l" x="20" y="297" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4"><tspan x="20.00 27.85 35.70 43.55 51.40 59.25 67.10 74.95" fill="#9399b2">  to    </tspan><tspan x="82.80 90.65 98.50 106.35 114.20 122.05 129.90 137.75 145.60 153.45 161.30 169.15 177.00 184.85 192.70 200.55 208.40 216.25 224.10 231.95 239.80 247.65 255.50" fill="#00c5c7">/Users/demo/code/lipsum</tspan></text>
+  <text id="l13" class="l" x="20" y="317" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4"><tspan x="20.00 27.85 35.70 43.55 51.40 59.25 67.10 74.95 82.80 90.65 98.50 106.35 114.20 122.05 129.90 137.75 145.60 153.45 161.30 169.15 177.00 184.85 192.70 200.55 208.40 216.25 224.10 231.95 239.80 247.65 255.50 263.35 271.20 279.05 286.90 294.75 302.60 310.45 318.30 326.15 334.00 341.85 349.70 357.55 365.40 373.25 381.10 388.95 396.80 404.65 412.50 420.35 428.20 436.05 443.90 451.75 459.60 467.45 475.30 483.15 491.00 498.85 506.70 514.55 522.40 530.25 538.10 545.95 553.80 561.65 569.50 577.35 585.20 593.05 600.90 608.75 616.60 624.45">    2026-08-13 13:40  833e1739  ./scratch/  image recovery notes from the dump</tspan></text>
+  <text id="l14" class="l" x="20" y="337" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4"><tspan x="20.00 27.85 35.70 43.55 51.40 59.25 67.10 74.95 82.80 90.65 98.50 106.35 114.20 122.05 129.90 137.75 145.60 153.45 161.30 169.15 177.00 184.85 192.70 200.55 208.40 216.25 224.10 231.95 239.80 247.65 255.50 263.35 271.20 279.05 286.90 294.75 302.60 310.45 318.30 326.15 334.00 341.85 349.70 357.55 365.40 373.25 381.10 388.95 396.80 404.65 412.50 420.35 428.20 436.05 443.90 451.75 459.60 467.45 475.30 483.15 491.00 498.85 506.70 514.55 522.40 530.25 538.10 545.95" fill="#9399b2">  no folder is moved, and the transcripts keep the cwd they recorded</tspan></text>
+  <text id="l15" class="l" x="20" y="357" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4"><tspan x="20.00 27.85 35.70 43.55 51.40 59.25 67.10 74.95 82.80 90.65 98.50 106.35 114.20 122.05 129.90 137.75 145.60 153.45 161.30 169.15 177.00 184.85 192.70 200.55 208.40 216.25 224.10 231.95 239.80 247.65 255.50 263.35 271.20 279.05 286.90 294.75 302.60 310.45 318.30 326.15 334.00 341.85 349.70 357.55 365.40 373.25 381.10 388.95 396.80 404.65 412.50 420.35 428.20 436.05 443.90 451.75 459.60 467.45 475.30 483.15 491.00 498.85 506.70 514.55 522.40 530.25 538.10 545.95 553.80 561.65 569.50 577.35 585.20 593.05 600.90 608.75" fill="#9399b2">  the destination's trust and tool permissions are left as Claude finds them</tspan></text>
+  <text id="l16" class="l" x="20" y="377" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4"><tspan x="20.00 27.85 35.70 43.55 51.40 59.25 67.10 74.95 82.80 90.65 98.50 106.35 114.20 122.05 129.90 137.75" font-weight="700">proceed? [y/N]: </tspan><tspan x="145.60" fill="#58e790" font-weight="700">y</tspan></text>
+  <text id="l17" class="l" x="20" y="397" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4"><tspan x="20.00 27.85 35.70 43.55 51.40 59.25 67.10 74.95 82.80 90.65 98.50 106.35 114.20 122.05" fill="#9399b2">restore point:</tspan><tspan x="129.90"> </tspan><tspan x="137.75 145.60 153.45 161.30 169.15 177.00 184.85 192.70 200.55 208.40 216.25 224.10 231.95 239.80 247.65 255.50 263.35 271.20 279.05 286.90 294.75 302.60 310.45 318.30 326.15 334.00 341.85 349.70 357.55 365.40 373.25 381.10 388.95 396.80 404.65 412.50 420.35 428.20 436.05 443.90 451.75 459.60 467.45 475.30 483.15 491.00" fill="#9399b2">/Users/demo/.claude-mv/restore/20260829-000417</tspan></text>
+  <text id="l18" class="l" x="20" y="417" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4"><tspan x="20.00 27.85 35.70 43.55 51.40 59.25 67.10 74.95 82.80" font-weight="700">re-homing</tspan><tspan x="90.65"> </tspan><tspan x="98.50" font-weight="700">1</tspan><tspan x="106.35 114.20 122.05 129.90 137.75 145.60 153.45 161.30 169.15"> session </tspan><tspan x="177.00 184.85 192.70 200.55 208.40 216.25 224.10 231.95 239.80 247.65 255.50 263.35 271.20 279.05 286.90 294.75" fill="#00c5c7">/Users/demo/code</tspan><tspan x="302.60"> </tspan><tspan x="310.45" fill="#9399b2">→</tspan><tspan x="318.30"> </tspan><tspan x="326.15 334.00 341.85 349.70 357.55 365.40 373.25 381.10 388.95 396.80 404.65 412.50 420.35 428.20 436.05 443.90 451.75 459.60 467.45 475.30 483.15 491.00 498.85" fill="#00c5c7">/Users/demo/code/lipsum</tspan><tspan x="506.70"> </tspan><tspan x="514.55 522.40 530.25 538.10 545.95 553.80 561.65 569.50 577.35 585.20 593.05 600.90 608.75 616.60 624.45 632.30 640.15 648.00 655.85 663.70" fill="#9399b2">(no folder is moved)</tspan></text>
+  <text id="l20" class="l" x="20" y="457" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4"><tspan x="20.00 27.85" fill="#9399b2">──</tspan><tspan x="35.70"> </tspan><tspan x="43.55 51.40 59.25 67.10 74.95 82.80 90.65" fill="#9399b2">profile</tspan><tspan x="98.50"> </tspan><tspan x="106.35 114.20 122.05 129.90 137.75 145.60 153.45 161.30 169.15 177.00 184.85 192.70 200.55 208.40 216.25 224.10 231.95 239.80 247.65" font-weight="700">/Users/demo/.claude</tspan></text>
+  <text id="l21" class="l" x="20" y="477" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4"><tspan x="20.00 27.85">  </tspan><tspan x="35.70 43.55 51.40" fill="#00c200">did</tspan><tspan x="59.25 67.10 74.95 82.80 90.65 98.50 106.35 114.20 122.05"> re-home </tspan><tspan x="129.90 137.75 145.60 153.45 161.30 169.15 177.00 184.85" font-weight="700">833e1739</tspan><tspan x="192.70"> </tspan><tspan x="200.55" fill="#9399b2">→</tspan><tspan x="208.40"> </tspan><tspan x="216.25 224.10 231.95 239.80 247.65 255.50 263.35 271.20 279.05 286.90 294.75 302.60 310.45 318.30 326.15 334.00 341.85 349.70 357.55 365.40 373.25 381.10 388.95 396.80 404.65 412.50 420.35 428.20 436.05 443.90 451.75 459.60" fill="#60fdff" font-weight="700">projects/-Users-demo-code-lipsum</tspan></text>
+  <text id="l22" class="l" x="20" y="497" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4"><tspan x="20.00 27.85">  </tspan><tspan x="35.70 43.55 51.40" fill="#00c200">did</tspan><tspan x="59.25 67.10 74.95 82.80 90.65 98.50 106.35 114.20"> re-key </tspan><tspan x="122.05" font-weight="700">1</tspan><tspan x="129.90 137.75 145.60 153.45 161.30 169.15 177.00 184.85 192.70 200.55"> entry in </tspan><tspan x="208.40 216.25 224.10 231.95 239.80 247.65 255.50 263.35 271.20 279.05 286.90 294.75 302.60" font-weight="700">history.jsonl</tspan><tspan x="310.45"> </tspan><tspan x="318.30" fill="#9399b2">→</tspan><tspan x="326.15"> </tspan><tspan x="334.00 341.85 349.70 357.55 365.40 373.25 381.10 388.95 396.80 404.65 412.50 420.35 428.20 436.05 443.90 451.75 459.60 467.45 475.30 483.15 491.00 498.85 506.70" fill="#00c5c7">/Users/demo/code/lipsum</tspan></text>
+  <text id="l24" class="l" x="20" y="537" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4"><tspan x="20.00" fill="#58e790" font-weight="700">✅</tspan><tspan x="35.70 43.55 51.40 59.25 67.10" fill="#58e790" font-weight="700"> done</tspan><tspan x="74.95 82.80 90.65 98.50 106.35 114.20 122.05 129.90 137.75 145.60 153.45 161.30 169.15 177.00 184.85 192.70 200.55 208.40 216.25 224.10 231.95 239.80 247.65 255.50 263.35 271.20 279.05 286.90 294.75 302.60 310.45 318.30 326.15 334.00 341.85"> — 1 session file · 1 history entry</tspan></text>
+  <text id="l25" class="l" x="20" y="557" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4"><tspan x="20.00 27.85 35.70 43.55 51.40 59.25 67.10 74.95 82.80 90.65 98.50 106.35 114.20 122.05 129.90 137.75 145.60 153.45 161.30 169.15 177.00 184.85 192.70 200.55 208.40 216.25 224.10 231.95 239.80 247.65 255.50 263.35 271.20 279.05 286.90 294.75 302.60 310.45 318.30 326.15 334.00 341.85 349.70 357.55 365.40 373.25 381.10 388.95 396.80 404.65 412.50 420.35 428.20 436.05 443.90 451.75 459.60 467.45 475.30 483.15 491.00 498.85 506.70 514.55 522.40 530.25 538.10 545.95 553.80 561.65 569.50 577.35 585.20 593.05 600.90 608.75 616.60 624.45 632.30 640.15 648.00" fill="#9399b2">   no config entry for the destination yet — Claude writes one on first run there</tspan></text>
+  <text id="l26" class="l" x="20" y="577" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4"><tspan x="20.00 27.85 35.70 43.55 51.40 59.25 67.10 74.95 82.80 90.65 98.50 106.35 114.20 122.05 129.90 137.75 145.60 153.45 161.30 169.15 177.00 184.85 192.70 200.55 208.40 216.25 224.10 231.95 239.80 247.65 255.50 263.35 271.20 279.05 286.90 294.75 302.60 310.45 318.30 326.15 334.00 341.85 349.70 357.55 365.40 373.25 381.10 388.95 396.80 404.65 412.50 420.35 428.20 436.05 443.90 451.75 459.60 467.45 475.30 483.15 491.00 498.85 506.70 514.55 522.40 530.25">   (trust and tool permissions are deliberately not copied across)</tspan></text>
+  <text id="l27" class="l" x="20" y="597" font-family="'Cascadia Code','Fira Code',SFMono-Regular,Consolas,Menlo,monospace" font-size="13" xml:space="preserve" fill="#cdd6f4"><tspan x="20.00 27.85 35.70 43.55 51.40 59.25 67.10 74.95 82.80 90.65 98.50 106.35 114.20 122.05 129.90 137.75 145.60 153.45 161.30 169.15 177.00 184.85 192.70 200.55 208.40 216.25 224.10 231.95 239.80 247.65 255.50 263.35 271.20 279.05 286.90 294.75 302.60 310.45 318.30 326.15 334.00 341.85 349.70 357.55 365.40 373.25 381.10 388.95 396.80 404.65 412.50 420.35 428.20 436.05 443.90 451.75 459.60 467.45 475.30 483.15 491.00 498.85 506.70 514.55 522.40 530.25 538.10 545.95 553.80 561.65 569.50 577.35 585.20 593.05 600.90 608.75 616.60 624.45 632.30 640.15 648.00 655.85 663.70 671.55 679.40 687.25 695.10 702.95 710.80 718.65 726.50" fill="#9399b2">   `claude --resume` in /Users/demo/code/lipsum will now find it (restore point cleaned up)</tspan></text>
+</svg>

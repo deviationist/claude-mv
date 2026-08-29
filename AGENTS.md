@@ -45,6 +45,52 @@ Code history so `claude --resume` still finds the sessions at the new path.
   would land the transcript and *then* fail renaming the sidecar onto it,
   stopping halfway — breaking the up-front-detection promise — besides handing
   one conversation another's subagent transcripts.
+- **`--search TEXT` searches the transcripts, not the picker rows** — the whole
+  point is the conversation that only got round to saying it on turn forty. The
+  match is a **literal, case-insensitive substring of one raw jsonl line**:
+  words are joined by single spaces into one phrase, it is not a regex, not an
+  AND across words, and it cannot span two lines. That is ccfind's `grep -F`
+  semantics, deliberately — **where ccfind exists it does the matching**, so
+  the fallback matcher has to mean the same thing or `--search` would quietly
+  differ per machine. `TestSessionSourcesAgree` runs both over one fixture and
+  demands the same ids, for a plain list, a search, and a recursive scope.
+  Matching the raw line (rather than the decoded turn) is also why a path, a
+  tool result or an error message counts. The **excerpt** is always ours:
+  ccfind's own snippet is a window on the raw JSON, right for a tool printing
+  lines and wrong for a picker offering conversations — and a row whose opening
+  line already contains the match gets no excerpt at all rather than the same
+  words twice. A capped search says so; a capped plain list does not, because
+  the newest N is a fair answer to "show me the sessions" and is not a fair
+  answer to "find the one that says X".
+- **`-R/--recursive` widens the candidate scope**, from the sessions homed in
+  `src` to those homed anywhere below it. Off by default: one folder is the
+  common case and the conservative one. The filesystem walk reuses
+  `find_project_dirs()` — the same prefix-then-confirm the folder move does,
+  because enc() maps `code/api` and `code-api` onto one name and only a
+  session's recorded cwd separates them. ccfind is asked by dropping `-x`.
+  Rows then carry a **where** column (`./`, `./sub/`) since one list now comes
+  from several folders; the flat case has no such column and reads exactly as
+  it did. `session_count()` follows the scope for the same reason — a browser
+  row offering a tree that says "0 sessions" is worse than no row — and it
+  stays a listdir, so a mixed encoded dir can read one or two high; the number
+  is a signpost, and the next screen lists the sessions themselves.
+- **Three handshakes now guard ccfind's answer**, all of them "did you hear the
+  question we asked": `scope_exact` must equal `not recursive` (not merely
+  `true`); with a query, the echoed `query` must come back verbatim — ccfind
+  reads a leading word that names one of its own profiles as a *filter*, which
+  would answer with that profile's whole history — and `case_sensitive` must be
+  `false`, which is why `-I` is always sent: `CCFIND_CASE` on the machine must
+  not be able to redefine what `--search` means on it. Any mismatch falls
+  through to the walk, except under `CLAUDE_MV_SOURCE=ccfind`, which still
+  fails loudly.
+- **The survey page is the last screen before anything is written.** After the
+  sessions and the destination are settled and conflicts are detected, the run
+  restates the whole decision — from, to, every chosen row in picker form, what
+  a conflict will do to each — and asks. Shown only when `can_prompt()`, and
+  skipped by `--force` and `-n`: a run that could not have been asked a
+  question is a run nobody is watching, and every scripted `--no-browse
+  --session` invocation must stay unattended. Declining returns 1 before the
+  restore point is created, so "nothing was changed" is literal.
 - **`--extract` is a three-step guide**: which folder (a directory browser
   starting at the cwd, each row annotated with its session count), which
   sessions, then where to — in that order, because the destination is only
@@ -95,9 +141,10 @@ Code history so `claude --resume` still finds the sessions at the new path.
   `CLAUDE_MV_CCFIND_SOURCE`.
 - `claude-mv.py` — all the logic; stdlib only, no deps.
 - **Two soft dependencies, both only for `--extract`, neither required.**
-  *ccfind* lists the candidate sessions (`--json -l -x -d <src>`) and adds
-  full-text search over transcripts; without it the same list comes off the
-  filesystem, still across every profile. *fzf* drives both pickers — the
+  *ccfind* lists the candidate sessions (`--json -l -I -x -d <src>`) and,
+  with `--search`, greps them; without it the same list comes off the
+  filesystem and the same search is run here, still across every profile — it
+  is a faster path, not a wider one. *fzf* drives both pickers — the
   session multi-select and the directory browser; without it they become a
   numbered prompt and a readline path prompt with tab completion. Both are
   invoked through `fzf_layout()`: **`--reverse` and a `--height` sized to the
@@ -117,9 +164,10 @@ Code history so `claude --resume` still finds the sessions at the new path.
   than stopping. **`scope_exact` in ccfind's JSON is the compatibility
   handshake**: a ccfind that took `-x` and ignored it would answer about the
   whole *subtree*, so anything but a definite `true` means fall back.
-- `tests/test_claude_mv.py` — nine layers (unit, e2e, multi-profile, session
-  sources, session move + picker, zsh wrapper, conformance against the real
-  `~/.claude`, live against the `claude` binary, resume UI under tmux). The
+- `tests/test_claude_mv.py` — ten layers (unit, e2e, multi-profile, session
+  sources, session move + picker, search + scope + survey page, zsh wrapper,
+  conformance against the real `~/.claude`, live against the `claude` binary,
+  resume UI under tmux). The
   last two opt in with `CLAUDE_MV_LIVE_TEST=1`; they need no auth and spend no
   tokens. The wrapper layer needs zsh — CI installs it on Linux and runs `zsh
   --version` *without* a `|| true`, so a runner image that drops zsh fails the
@@ -149,7 +197,13 @@ Code history so `claude --resume` still finds the sessions at the new path.
   screen it takes over, so there is nothing on stdout to pipe. The picker scene
   is therefore *reconstructed* by `fzf_frame()` from what claude-mv actually
   passes fzf (prompt, header, `--multi`, and the rows it feeds in), the same
-  approach ccfind takes and for the same reason. Reconstruction means it can
+  approach ccfind takes and for the same reason. **The search scene has a width
+  budget**: its rows carry two extra columns (the home folder and the matching
+  line), and the emitter sizes the image to its longest line, so a prompt or a
+  reply seeded a few words longer there produces an image twice as wide as the
+  others and half as legible on GitHub. `seed_search` keeps its two matching
+  sessions deliberately terse for that reason and says so in place.
+  Reconstruction means it can
   drift from reality: if the invocation in `pick_with_fzf` changes, that
   function has to change with it.
   **Five things are load-bearing; changing any one silently breaks it:**
@@ -198,7 +252,8 @@ Code history so `claude --resume` still finds the sessions at the new path.
 - Touching `--extract`? The three deliberate non-actions — no `cwd` rewrite,
   no config entry, no folder move — are load-bearing, each with a test naming
   the reason. If one starts looking like an oversight, read the test before
-  "fixing" it.
+  "fixing" it. The survey page names all three out loud, so a fourth
+  non-action needs a line there too.
 - New output goes through `c()` / `emsg()` / `wmsg()`, never a raw escape. A
   test parses the call sites and fails on a style name `_SGR` doesn't define —
   `c()` indexes it directly, so a typo is a `KeyError` on a terminal that the

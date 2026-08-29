@@ -589,7 +589,7 @@ class FixtureCase(unittest.TestCase):
         return d
 
     def make_session(self, home_cwd, sid, prompt="hi", later_cwd=None,
-                     sidecar=False, mtime=None):
+                     sidecar=False, mtime=None, says=(), raw=()):
         """One session homed in `home_cwd` — the --extract unit of work.
 
         `later_cwd` adds a second turn recorded somewhere else, which is the
@@ -598,6 +598,11 @@ class FixtureCase(unittest.TestCase):
         <id>/ dir Claude puts beside the transcript for subagents and tool
         results, which lives INSIDE the project dir and so has to be carried
         by hand when a single session moves.
+
+        `says` is what the conversation went on to say — (role, text) turns in
+        the block form Claude actually writes — and `raw` is whole records
+        passed through untouched, for the lines --search has to match without
+        being able to read them as speech.
         """
         d = os.path.join(self.projects, cm.enc(home_cwd))
         os.makedirs(d, exist_ok=True)
@@ -606,6 +611,12 @@ class FixtureCase(unittest.TestCase):
         if later_cwd:
             lines.append({"type": "user", "cwd": later_cwd, "sessionId": sid,
                           "message": {"role": "user", "content": "and now here"}})
+        for role, text in says:
+            lines.append({"type": role, "cwd": home_cwd, "sessionId": sid,
+                          "message": {"role": role,
+                                      "content": [{"type": "text",
+                                                   "text": text}]}})
+        lines.extend(raw)
         lines.append({"type": "summary", "summary": "s", "leafUuid": sid})
         path = os.path.join(d, f"{sid}.jsonl")
         with open(path, "w") as f:
@@ -1855,6 +1866,42 @@ class TestSessionSourcesAgree(SessionFixture):
                                        "CCFIND_PROFILES": f"test:{self.profile}"})
             self.assertIn(self.HERO[:8], r.stdout, source)
 
+    def offered_by(self, source, *args):
+        """The ids the picker was given, from a run cancelled at the prompt."""
+        r = self.run_mv("--extract", "--no-browse", *args, self.code,
+                        self.proj, stdin="\n", expect=1,
+                        env_extra={"CLAUDE_MV_SOURCE": source,
+                                   "CLAUDE_MV_CCFIND_SOURCE": CCFIND_ZSH,
+                                   "CCFIND_PROFILES": f"test:{self.profile}",
+                                   "CLAUDE_MV_PICKER": "plain",
+                                   "CLAUDE_MV_FORCE_PROMPT": "1"})
+        return sorted(re.findall(r"^\s+\d+\s+\S+ \S+\s+([0-9a-f]{8})\s",
+                                 r.stdout, re.M))
+
+    def test_the_two_sources_answer_the_same_search(self):
+        """The hybrid's whole risk in one test. ccfind greps with -F where it
+        is installed and claude-mv reads the transcripts where it is not, so
+        --search has to mean the same thing either way: a literal substring,
+        case folded, matched against a raw transcript line."""
+        for query in ("unrelated", "and now here", "WORK", "nrelated wor"):
+            self.assertEqual(self.offered_by("ccfind", "--search", query),
+                             self.offered_by("fs", "--search", query), query)
+        # ... and the answer they agree on is the right one.
+        self.assertEqual(self.offered_by("fs", "--search", "unrelated"),
+                         sorted([self.SIBLING[:8], self.OTHER[:8]]))
+
+    def test_the_two_sources_agree_about_how_far_down_to_look(self):
+        below = "99999999-9999-9999-9999-999999999999"
+        self.make_session(self.proj, below, prompt="down here, unrelated too",
+                          mtime=500)
+        for args in (("-R",), ("-R", "--search", "unrelated")):
+            self.assertEqual(self.offered_by("ccfind", *args),
+                             self.offered_by("fs", *args), args)
+        self.assertIn(below[:8], self.offered_by("fs", "-R", "--search",
+                                                 "unrelated"))
+        self.assertNotIn(below[:8], self.offered_by("fs", "--search",
+                                                    "unrelated"))
+
 
 # ── end-to-end: moving sessions, not folders ────────────────────────────────
 
@@ -2239,15 +2286,15 @@ class TestSessionPicker(SessionFixture):
                                      self.OTHER[:8]])
 
     def test_a_number_picks_that_session(self):
-        self.run_mv("--extract", "--no-browse", self.code, self.proj, stdin="1\n",
-                    env_extra=self.PLAIN)
+        self.run_mv("--extract", "--no-browse", self.code, self.proj,
+                    stdin="1\ny\n", env_extra=self.PLAIN)
         self.assertEqual(sorted(n[:-6] for n in os.listdir(
             os.path.join(self.projects, cm.enc(self.proj)))
             if n.endswith(".jsonl")), [self.HERO])
 
     def test_several_can_be_picked_at_once(self):
-        self.run_mv("--extract", "--no-browse", self.code, self.proj, stdin="1,3\n",
-                    env_extra=self.PLAIN)
+        self.run_mv("--extract", "--no-browse", self.code, self.proj,
+                    stdin="1,3\ny\n", env_extra=self.PLAIN)
         moved = sorted(n[:-6] for n in os.listdir(
             os.path.join(self.projects, cm.enc(self.proj)))
             if n.endswith(".jsonl"))
@@ -2261,8 +2308,8 @@ class TestSessionPicker(SessionFixture):
             os.path.join(self.projects, cm.enc(self.proj))))
 
     def test_it_reprompts_rather_than_guessing(self):
-        self.run_mv("--extract", "--no-browse", self.code, self.proj, stdin="9\n1\n",
-                    env_extra=self.PLAIN)
+        self.run_mv("--extract", "--no-browse", self.code, self.proj,
+                    stdin="9\n1\ny\n", env_extra=self.PLAIN)
         self.assertTrue(os.path.exists(os.path.join(
             self.projects, cm.enc(self.proj), f"{self.HERO}.jsonl")))
 
@@ -2466,7 +2513,8 @@ class TestFolderPicker(SessionFixture):
         defaults to the cwd, the second to the path passed. Two bare Enters
         accept both."""
         r = self.run_mv("--extract", "--session", self.HERO, self.proj,
-                        stdin="\n\n", env_extra=self.PLAIN, cwd=self.code)
+                        stdin="\n\ny\n", env_extra=self.PLAIN,
+                        cwd=self.code)
         self.assertIn("Which folder holds the sessions?", r.stdout)
         self.assertIn("Where should they go?", r.stdout)
         self.assertEqual(self.moved_to(self.proj), [self.HERO])
@@ -2474,21 +2522,22 @@ class TestFolderPicker(SessionFixture):
     def test_a_typed_path_overrides_the_default(self):
         other = self.make_folder("elsewhere")
         self.run_mv("--extract", "--session", self.HERO, self.proj,
-                    stdin=f"\n{other}\n", env_extra=self.PLAIN, cwd=self.code)
+                    stdin=f"\n{other}\ny\n", env_extra=self.PLAIN,
+                    cwd=self.code)
         self.assertEqual(self.moved_to(other), [self.HERO])
         self.assertEqual(self.moved_to(self.proj), [])
 
     def test_the_destination_is_asked_after_the_sessions(self):
         """The order the decision is actually made in: you know which
         conversation you are moving before you know where it belongs."""
-        r = self.run_mv("--extract", self.proj, stdin="\n1\n\n",
+        r = self.run_mv("--extract", self.proj, stdin="\n1\n\ny\n",
                         env_extra=self.PLAIN, cwd=self.code)
         self.assertLess(r.stdout.index("sessions available to move"),
                         r.stdout.index("Where should they go?"))
 
     def test_a_path_that_is_not_a_directory_reprompts(self):
         self.run_mv("--extract", "--session", self.HERO, self.proj,
-                    stdin=f"\n{self.code}/nope\n{self.proj}\n",
+                    stdin=f"\n{self.code}/nope\n{self.proj}\ny\n",
                     env_extra=self.PLAIN, cwd=self.code)
         self.assertEqual(self.moved_to(self.proj), [self.HERO])
 
@@ -2525,7 +2574,7 @@ class TestFolderPicker(SessionFixture):
         be it, so the browse opens on the source rather than on nothing."""
         r = self.run_mv("--extract", "--session", self.HERO,
                         os.path.join(self.code, "not-created-yet"),
-                        stdin=f"\n{self.proj}\n", env_extra=self.PLAIN,
+                        stdin=f"\n{self.proj}\ny\n", env_extra=self.PLAIN,
                         cwd=self.code)
         self.assertIn(f"Enter accepts {self.code}", r.stdout.split(
             "Where should they go?")[1])
@@ -2704,6 +2753,427 @@ class TestSessionPickerWithFzf(SessionFixture):
         self.assertIn("nothing selected", r.stdout)
         self.assertFalse(os.path.exists(
             os.path.join(self.projects, cm.enc(self.proj))))
+
+
+# ── searching the transcripts, and how wide to look ─────────────────────────
+
+class SearchFixture(FixtureCase):
+    """Sessions with something to find in them, in a tree worth recursing into.
+
+    Deliberately spread across the three places a match can hide: the opening
+    line the picker already showed, a turn further down that it never did, and
+    a record nobody spoke at all.
+    """
+
+    HERO = "aaaaaaaa-1111-1111-1111-111111111111"    # says it mid-conversation
+    QUIET = "bbbbbbbb-2222-2222-2222-222222222222"   # never says it
+    OPENER = "cccccccc-3333-3333-3333-333333333333"  # says it in line one
+    NESTED = "dddddddd-4444-4444-4444-444444444444"  # homed one folder down
+    COUSIN = "eeeeeeee-5555-5555-5555-555555555555"  # a folder encoding alike
+    TOOLY = "ffffffff-6666-6666-6666-666666666666"   # only a tool result says
+
+    FS = {"CLAUDE_MV_SOURCE": "fs", "CLAUDE_MV_PICKER": "plain",
+          "CLAUDE_MV_FORCE_PROMPT": "1"}
+
+    def setUp(self):
+        super().setUp()
+        self.proj = self.make_folder("newproj")
+        self.api = self.make_folder("api")
+        # Same encoding as `code/api`, a different folder: enc() maps both
+        # onto one name, so the recursive walk has to confirm against what a
+        # session recorded rather than trust the directory name.
+        self.cousin = self.code + "-api"
+        os.makedirs(self.cousin, exist_ok=True)
+        self.make_session(self.code, self.HERO, prompt="build me a thing",
+                          says=[("assistant", "the nginx config wants a "
+                                              "server block here")],
+                          mtime=3000)
+        self.make_session(self.code, self.QUIET, prompt="unrelated work",
+                          mtime=2000)
+        self.make_session(self.code, self.OPENER,
+                          prompt="set up nginx behind the proxy", mtime=1000)
+        self.make_session(self.api, self.NESTED, prompt="api scaffolding",
+                          says=[("assistant", "nginx sits in front of it")],
+                          mtime=2500)
+        self.make_session(self.cousin, self.COUSIN,
+                          prompt="nginx in the folder that encodes alike",
+                          mtime=2200)
+        self.make_session(self.code, self.TOOLY, prompt="check the logs",
+                          raw=[{"type": "user", "cwd": self.code,
+                                "sessionId": self.TOOLY,
+                                "message": {"role": "user", "content": [
+                                    {"type": "tool_result",
+                                     "content": "ENOENT: zephyr.conf missing"}
+                                ]}}],
+                          mtime=900)
+        self.add_config(self.code)
+        self.write_fixture()
+
+    def offered(self, *args, env_extra=None):
+        """(run, ids) — what the picker was given, from a run cancelled at it.
+
+        Cancelling is the point: the list is the thing under test, and a run
+        that went on to move something would be testing the move as well.
+        """
+        r = self.run_mv("--extract", "--no-browse", *args, self.code,
+                        self.proj, stdin="\n", env_extra=env_extra or self.FS,
+                        expect=1)
+        return r, re.findall(r"^\s+\d+\s+\S+ \S+\s+([0-9a-f]{8})\s", r.stdout,
+                             re.M)
+
+    def moved_ids(self, cwd):
+        d = os.path.join(self.projects, cm.enc(cwd))
+        return sorted(n[:-len(".jsonl")] for n in os.listdir(d)
+                      if n.endswith(".jsonl")) if os.path.isdir(d) else []
+
+
+class TestSessionSearch(SearchFixture):
+    """--search: which sessions the query leaves on the list."""
+
+    def test_the_whole_conversation_is_searched_not_the_opening_line(self):
+        """The reason the flag exists. HERO's only mention of nginx is in a
+        reply, which is precisely what the picker never showed."""
+        _, ids = self.offered("--search", "nginx")
+        self.assertEqual(sorted(ids),
+                         sorted([self.HERO[:8], self.OPENER[:8]]))
+
+    def test_a_session_that_never_mentions_it_is_not_offered(self):
+        _, ids = self.offered("--search", "nginx")
+        self.assertNotIn(self.QUIET[:8], ids)
+
+    def test_case_is_ignored(self):
+        _, ids = self.offered("--search", "NGINX")
+        self.assertEqual(sorted(ids),
+                         sorted([self.HERO[:8], self.OPENER[:8]]))
+
+    def test_the_words_are_one_phrase_not_a_word_soup(self):
+        """ccfind matches with grep -F, so claude-mv does too: the words are
+        one literal string in the order they were typed, not an AND."""
+        _, ids = self.offered("--search", "nginx config")
+        self.assertEqual(ids, [self.HERO[:8]])
+        r = self.run_mv("--extract", "--no-browse", "--search", "config nginx",
+                        self.code, self.proj, env_extra=self.FS, expect=1)
+        self.assertIn("none of the", r.stderr)
+
+    def test_a_line_nobody_said_still_counts(self):
+        """Matching runs over the raw record, so a tool result, a path or an
+        error message is findable even though no turn ever spoke it — which is
+        often exactly how a conversation is remembered."""
+        r, ids = self.offered("--search", "zephyr")
+        self.assertEqual(ids, [self.TOOLY[:8]])
+        self.assertIn("zephyr.conf missing", r.stdout)
+
+    def test_the_matching_line_is_shown_beside_the_opening_one(self):
+        r, _ = self.offered("--search", "nginx")
+        hero = [ln for ln in r.stdout.splitlines() if self.HERO[:8] in ln][0]
+        self.assertIn("build me a thing", hero)      # what it is
+        self.assertIn("server block here", hero)     # why it is on the list
+
+    def test_a_match_already_visible_in_the_opening_line_is_not_repeated(self):
+        r, _ = self.offered("--search", "nginx")
+        opener = [ln for ln in r.stdout.splitlines()
+                  if self.OPENER[:8] in ln][0]
+        self.assertNotIn("↦", opener)
+
+    def test_nothing_matching_says_how_many_were_searched(self):
+        """"No sessions here" and "none of these" are different mistakes, and
+        only the first one is about the path."""
+        r = self.run_mv("--extract", "--no-browse", "--search", "kubernetes",
+                        self.code, self.proj, env_extra=self.FS, expect=1)
+        self.assertIn("none of the 4 sessions", r.stderr)
+
+    def test_a_capped_search_says_it_was_capped(self):
+        """A plain list is capped quietly — the newest N is a fine answer to
+        "show me the sessions". A capped search is not: the one you are
+        looking for may be the one that fell off."""
+        r, ids = self.offered("--limit", "1", "--search", "nginx")
+        self.assertEqual(ids, [self.HERO[:8]])
+        self.assertIn("2 sessions match", r.stderr)
+        self.assertIn("--limit", r.stderr)
+
+    def test_a_found_session_can_then_be_moved(self):
+        self.run_mv("--extract", "--no-browse", "--search", "nginx", self.code,
+                    self.proj, stdin="1\ny\n", env_extra=self.FS)
+        self.assertEqual(self.moved_ids(self.proj), [self.HERO])
+
+    def test_searching_needs_the_mode(self):
+        r = self.run_mv("--search", "nginx", self.code, self.proj,
+                        env_extra=self.FS, expect=2)
+        self.assertIn("needs --extract", r.stderr)
+
+    def test_an_empty_search_is_refused(self):
+        r = self.run_mv("--extract", "--no-browse", "--search", "  ",
+                        self.code, self.proj, env_extra=self.FS, expect=2)
+        self.assertIn("something to look for", r.stderr)
+
+    def test_naming_ids_and_searching_are_the_same_question_twice(self):
+        r = self.run_mv("--extract", "--no-browse", "--search", "nginx",
+                        "--session", self.HERO, self.code, self.proj,
+                        env_extra=self.FS, expect=2)
+        self.assertIn("two ways to say which sessions", r.stderr)
+
+
+class TestSearchScope(SearchFixture):
+    """-R: how far down the tree the candidates come from."""
+
+    def test_one_folder_is_the_default(self):
+        _, ids = self.offered("--search", "nginx")
+        self.assertNotIn(self.NESTED[:8], ids)
+
+    def test_recursive_reaches_the_folders_below(self):
+        _, ids = self.offered("-R", "--search", "nginx")
+        self.assertIn(self.NESTED[:8], ids)
+
+    def test_a_folder_that_merely_encodes_alike_is_not_swept_in(self):
+        """enc() maps code/api and code-api onto the same name. Only what a
+        session recorded can tell a nested project from an unrelated sibling,
+        and the sibling's history is not ours to move."""
+        _, ids = self.offered("-R", "--search", "nginx")
+        self.assertNotIn(self.COUSIN[:8], ids)
+
+    def test_the_row_says_which_folder_it_came_out_of(self):
+        r, _ = self.offered("-R", "--search", "nginx")
+        nested = [ln for ln in r.stdout.splitlines()
+                  if self.NESTED[:8] in ln][0]
+        self.assertIn("./api/", nested)
+        self.assertIn("./", [ln for ln in r.stdout.splitlines()
+                             if self.HERO[:8] in ln][0])
+
+    def test_a_flat_run_has_no_folder_column(self):
+        r, _ = self.offered("--search", "nginx")
+        self.assertNotIn("./", r.stdout)
+
+    def test_a_match_only_below_says_so_rather_than_nothing(self):
+        r = self.run_mv("--extract", "--no-browse", "--search", "scaffolding",
+                        self.code, self.proj, env_extra=self.FS, expect=1)
+        self.assertIn("1 session below it mentions it", r.stderr)
+        self.assertIn("--recursive", r.stderr)
+
+    def test_a_session_from_below_really_moves(self):
+        self.run_mv("--extract", "--no-browse", "-R", "--search",
+                    "scaffolding", self.code, self.proj, stdin="1\ny\n",
+                    env_extra=self.FS)
+        self.assertEqual(self.moved_ids(self.proj), [self.NESTED])
+        # NB: api/ and the cousin share one encoded dir — that is the trap
+        # this fixture exists to set. Only the nested session left it.
+        self.assertNotIn(self.NESTED, self.moved_ids(self.api))
+
+    def test_the_whole_tree_can_be_listed_without_a_search(self):
+        _, ids = self.offered("-R")
+        self.assertIn(self.NESTED[:8], ids)
+        self.assertNotIn(self.COUSIN[:8], ids)
+
+    def test_recursing_needs_the_mode(self):
+        r = self.run_mv("-R", self.code, self.proj, env_extra=self.FS,
+                        expect=2)
+        self.assertIn("needs --extract", r.stderr)
+
+    def test_the_folder_browser_counts_the_tree_it_offers(self):
+        """Step one annotates each directory with what it holds. Under -R the
+        row is offering a tree, so the count has to be the tree's — a count of
+        the one folder would be a different number from the list the next step
+        goes on to show."""
+        self.assertEqual(cm.session_count([self.profile], self.code), 4)
+        # 5 are homed under code; the count says 6 because api/ and the
+        # cousin share one encoded dir and this is a listdir, not a read. The
+        # row is a signpost — see session_count() on why it stays cheap.
+        self.assertEqual(
+            cm.session_count([self.profile], self.code, recursive=True), 6)
+        rows = cm.dir_rows(self.code, [self.profile], recursive=True)
+        self.assertIn("6 sessions", rows[0][1])
+
+    def test_the_prompt_says_it_is_about_to_search_a_tree(self):
+        r = self.run_mv("--extract", "-R", "--session", self.HERO, self.proj,
+                        stdin="\n\ny\n", env_extra=self.FS, cwd=self.code)
+        self.assertIn("Which folder to search under?", r.stdout)
+
+
+CCFIND_SEARCH_STUB = r'''#!/usr/bin/env python3
+"""Stand-in for ccfind that answers a SEARCH, and records how it was asked.
+
+Writes its argv to $STUB_ARGV and fills in the echo fields of the canned
+document ($STUB_DOC) from the flags it actually received — so a test poses
+"ccfind heard a different question" by overriding one field and everything
+else still answers honestly.
+"""
+import json, os, sys
+argv = sys.argv[1:]
+with open(os.environ["STUB_ARGV"], "w") as f:
+    f.write("\n".join(argv))
+if "--json" not in argv:
+    sys.exit(2)
+doc = json.load(open(os.environ["STUB_DOC"]))
+doc.setdefault("query", argv[-1] if "--" in argv else "")
+doc.setdefault("scope_exact", "-x" in argv)
+doc.setdefault("case_sensitive", "-I" not in argv)
+json.dump(doc, sys.stdout)
+'''
+
+
+class TestSearchThroughCcfind(SearchFixture):
+    """The search ccfind answers has to be the search we asked for.
+
+    ccfind greps with -F wherever it is installed, so it — not claude-mv —
+    decides which sessions match. Everything here is the handshake that keeps
+    that from silently becoming a different question.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.stub = os.path.join(self.tmp, "ccfind-stub")
+        with open(self.stub, "w") as f:
+            f.write(CCFIND_SEARCH_STUB)
+        os.chmod(self.stub, 0o755)
+        self.argv = os.path.join(self.tmp, "argv")
+        self.doc = os.path.join(self.tmp, "doc.json")
+
+    def answer(self, ids=(), **over):
+        doc = {"version": 1, "scope": self.code, "total": len(ids),
+               "shown": len(ids), "truncated": False,
+               "results": [{"epoch": 3000, "host": "local", "profile": "p",
+                            "config_dir": self.profile, "id": sid,
+                            "cwd": self.code, "mtime": "2026-01-01 00:00:00",
+                            "snippet": '{"raw":"json window"}',
+                            "path": os.path.join(
+                                self.projects, cm.enc(self.code),
+                                sid + ".jsonl")} for sid in ids]}
+        doc.update(over)
+        with open(self.doc, "w") as f:
+            json.dump(doc, f)
+        return {"CLAUDE_MV_CCFIND_BIN": self.stub, "STUB_DOC": self.doc,
+                "STUB_ARGV": self.argv, "CLAUDE_MV_SOURCE": "ccfind",
+                "CLAUDE_MV_PICKER": "plain", "CLAUDE_MV_FORCE_PROMPT": "1"}
+
+    def asked(self):
+        with open(self.argv) as f:
+            return f.read().splitlines()
+
+    def test_the_query_goes_down_to_ccfind(self):
+        self.offered("--search", "nginx", env_extra=self.answer([self.HERO]))
+        argv = self.asked()
+        self.assertEqual(argv[-2:], ["--", "nginx"])
+        self.assertIn("-x", argv)          # the default scope: one folder
+
+    def test_case_folding_is_pinned_rather_than_left_to_the_machine(self):
+        """Without -I, CCFIND_CASE on this machine would decide what --search
+        means, and the fallback matcher would disagree with it on exactly the
+        machines that set it."""
+        self.offered("--search", "nginx", env_extra=self.answer([self.HERO]))
+        self.assertIn("-I", self.asked())
+
+    def test_a_recursive_search_drops_the_exact_scope(self):
+        self.offered("-R", "--search", "nginx",
+                     env_extra=self.answer([self.HERO], scope_exact=False))
+        self.assertNotIn("-x", self.asked())
+
+    def test_a_query_ccfind_heard_differently_is_refused(self):
+        """ccfind reads a leading word that names one of its profiles as a
+        filter, not as text. The echoed query is how we find out; the walk is
+        what answers instead."""
+        env = self.answer([self.HERO, self.QUIET], query="soup")
+        r, ids = self.offered("--search", "nginx", env_extra=env)
+        self.assertIn("could not answer", r.stderr)
+        self.assertEqual(ids, [])
+
+    def test_an_answer_matched_with_the_wrong_case_folding_is_refused(self):
+        env = self.answer([self.HERO], case_sensitive=True)
+        r, _ = self.offered("--search", "nginx", env_extra=env)
+        self.assertIn("could not answer", r.stderr)
+
+    def test_an_answer_about_the_wrong_scope_is_refused_both_ways(self):
+        """scope_exact has to say back what we asked: True when we sent -x,
+        and False when we deliberately did not. An answer about one folder to
+        a question about a tree is the same kind of wrong."""
+        r, _ = self.offered("-R", "--search", "nginx",
+                            env_extra=self.answer([self.HERO],
+                                                  scope_exact=True))
+        self.assertIn("could not answer", r.stderr)
+
+    def test_ccfinds_hits_are_shown_in_our_own_words(self):
+        """ccfind's snippet is a window on the raw JSON line that matched —
+        right for a search tool printing lines, wrong for a picker offering
+        conversations."""
+        r, ids = self.offered("--search", "nginx",
+                              env_extra=self.answer([self.HERO]))
+        self.assertEqual(ids, [self.HERO[:8]])
+        self.assertNotIn("json window", r.stdout)
+        self.assertIn("server block here", r.stdout)
+
+    def test_a_hit_we_cannot_point_at_keeps_its_row(self):
+        """ccfind greps bytes in the machine's locale; we read decoded text.
+        A match it saw and we cannot find is still ccfind's answer — the row
+        stays, it just says nothing about where the match was."""
+        r, ids = self.offered("--search", "nginx",
+                              env_extra=self.answer([self.QUIET]))
+        self.assertEqual(ids, [self.QUIET[:8]])
+        self.assertNotIn("↦", r.stdout)
+
+
+# ── the survey page: the last screen before anything is written ─────────────
+
+class TestSurveyPage(SearchFixture):
+    """The guide asks three questions and then acts. This is the fourth.
+
+    Less a fourth question than the first chance to see the answers to the
+    other three in one place — which is the only place the "wrong row"
+    mistake is visible while it is still free to fix.
+    """
+
+    def test_it_says_what_moves_where_before_anything_is_written(self):
+        r = self.run_mv("--extract", "--no-browse", "--search", "nginx",
+                        self.code, self.proj, stdin="1\ny\n",
+                        env_extra=self.FS)
+        survey = r.stdout.split("about to re-home")[1].split("proceed?")[0]
+        self.assertIn(self.HERO[:8], survey)
+        self.assertIn(self.proj, survey)
+        self.assertIn("no folder is moved", survey)
+        self.assertLess(r.stdout.index("about to re-home"),
+                        r.stdout.index("restore point"))
+
+    def test_declining_changes_nothing(self):
+        r = self.run_mv("--extract", "--no-browse", self.code, self.proj,
+                        stdin="1\nn\n", env_extra=self.FS, expect=1)
+        self.assertIn("cancelled", r.stdout)
+        self.assertEqual(self.moved_ids(self.proj), [])
+        self.assertEqual(self.restore_stamps(), [])
+
+    def test_end_of_input_is_not_consent(self):
+        r = self.run_mv("--extract", "--no-browse", self.code, self.proj,
+                        stdin="1\n", env_extra=self.FS, expect=1)
+        self.assertEqual(self.moved_ids(self.proj), [])
+
+    def test_force_says_the_watching_is_over(self):
+        self.run_mv("--extract", "--no-browse", "--force", "--session",
+                    self.HERO, self.code, self.proj, env_extra=self.FS)
+        self.assertEqual(self.moved_ids(self.proj), [self.HERO])
+
+    def test_a_dry_run_has_nothing_to_confirm(self):
+        r = self.run_mv("--extract", "--no-browse", "-n", "--session",
+                        self.HERO, self.code, self.proj, env_extra=self.FS)
+        self.assertNotIn("proceed?", r.stdout)
+
+    def test_a_pipe_is_not_asked_and_still_runs(self):
+        """--no-browse with --session is the scripted shape; a prompt nobody
+        can answer would turn every one of those runs into a refusal."""
+        self.run_mv("--extract", "--no-browse", "--session", self.HERO,
+                    self.code, self.proj,
+                    env_extra={"CLAUDE_MV_SOURCE": "fs"})
+        self.assertEqual(self.moved_ids(self.proj), [self.HERO])
+
+    def test_what_a_conflict_will_do_is_on_the_page(self):
+        self.make_session(self.proj, self.HERO, prompt="the newer copy")
+        r = self.run_mv("--extract", "--no-browse", "--session", self.HERO,
+                        self.code, self.proj, stdin="y\n", env_extra=self.FS)
+        self.assertIn("already at the destination", r.stdout)
+        self.assertIn("skipped", r.stdout)
+
+    def test_the_page_names_the_tree_when_the_scope_was_a_tree(self):
+        r = self.run_mv("--extract", "--no-browse", "-R", "--search",
+                        "scaffolding", self.code, self.proj, stdin="1\ny\n",
+                        env_extra=self.FS)
+        survey = r.stdout.split("about to re-home")[1].split("proceed?")[0]
+        self.assertIn("and below", survey)
+        self.assertIn("./api/", survey)
 
 
 # ── wrapper: which profiles the zsh layer decides to pass ───────────────────
