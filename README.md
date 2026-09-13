@@ -21,9 +21,10 @@ $HOME with a Claude profile, runs `claude-mv` against it, and converts the ANSI
 colours to SVG. Only the window and the `%` prompt line are drawn. Every store
 it touched is reported, and the run closes with the tally. The *pacing* is the
 one invented part: the lines are real, the speed they arrive at is a reveal,
-not a recording — a single captured run carries no timing. It plays once and
-rests on the finished screen, and `prefers-reduced-motion` skips straight to
-it.)
+not a recording — a single captured run carries no timing. It holds on the
+finished screen and then replays (an image below the fold would otherwise be
+finished before you scrolled to it), and `prefers-reduced-motion` skips
+straight to that screen.)
 
 ## Install
 
@@ -466,7 +467,7 @@ one into being.
 
 **It loops because it has to.** A browser does not pause a CSS animation inside
 an offscreen `<img>`: an image below the fold has already finished by the time
-you scroll to it. Playing once would mean four of these five never animate for
+you scroll to it. Playing once would mean six of these seven never animate for
 anyone who didn't land at the top. Starting on scroll isn't available either —
 that needs script, which `<img>` doesn't run — so the cycle is kept to 7–9s
 instead, which bounds how long you wait after scrolling to one.
@@ -478,7 +479,7 @@ is simply visible.
 ## Tests
 
 ```sh
-python3 tests/test_claude_mv.py              # hermetic, ~1s
+python3 tests/test_claude_mv.py              # hermetic, ~13s
 CLAUDE_MV_LIVE_TEST=1 python3 tests/test_claude_mv.py   # + live layers, ~20s
 ```
 

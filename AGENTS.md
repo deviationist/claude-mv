@@ -196,7 +196,7 @@ Code history so `claude --resume` still finds the sessions at the new path.
   the tool unmodified against a throwaway `$HOME` and converts the ANSI to an
   SVG terminal grid, so the text in them is real output. Sibling of the same
   script in claude-profile / claude-usage / claude-statusline; keep the four
-  roughly in sync. **All five animate as a terminal session**: the command
+  roughly in sync. **All seven animate as a terminal session**: the command
   types itself a character at a time with a block cursor walking after it, a
   beat for the Enter, then the output arrives line by line; multi-command
   scenes (restore has three) interleave type→run→print. Then it holds and
@@ -241,7 +241,7 @@ Code history so `claude --resume` still finds the sessions at the new path.
 
 ## Working on this
 
-- Run `python3 tests/test_claude_mv.py` — hermetic, ~8s. Never point a test at
+- Run `python3 tests/test_claude_mv.py` — hermetic, ~13s. Never point a test at
   the real `~/.claude` for anything but reading.
 - **The suite is checked by mutation, not just by passing.** Breaking one
   decision at a time (drop a guard, invert a sort, widen a filter) must turn
