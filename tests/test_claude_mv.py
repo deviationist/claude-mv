@@ -50,6 +50,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 import time
 import unittest
@@ -340,6 +341,48 @@ class TestFormatConformance(unittest.TestCase):
 
     Strictly read-only — nothing here writes, moves, or deletes.
     """
+
+    def test_claude_agrees_with_our_model_of_project_state(self):
+        """Piggyback on Claude Code's own enumeration of what a project owns.
+
+        `claude project purge --dry-run <path>` lists exactly the question
+        --export has to answer, from the vendor rather than from us. It is
+        read as an ORACLE, never parsed at runtime: the output is prose and
+        would be a fragile dependency, but as a test it is the earliest
+        warning we can get that the on-disk model moved.
+
+        Two claims the bundle design rests on are pinned here — that the
+        project dir is project state, and that shell-snapshots is not.
+        """
+        binary = _claude_bin()
+        if not os.path.exists(binary):
+            self.skipTest("no claude binary")
+        root = os.path.join(REAL_PROFILE, "projects")
+        if not os.path.isdir(root):
+            self.skipTest("no projects/ dir")
+        for name in sorted(os.listdir(root)):
+            d = os.path.join(root, name)
+            cwd = cm.jsonl_first_cwd(d) if os.path.isdir(d) else None
+            if cwd and os.path.isdir(cwd) and cm.enc(cwd) == name:
+                break
+        else:
+            self.skipTest("no project dir whose recorded cwd still exists")
+        r = subprocess.run([binary, "project", "purge", "--dry-run", cwd],
+                           capture_output=True, text=True, timeout=120)
+        if r.returncode != 0:
+            self.skipTest(f"purge --dry-run unavailable: {r.stderr[:200]}")
+        out = r.stdout
+        self.assertIn(os.path.join("projects", name), out,
+                      "Claude no longer counts the project dir as project "
+                      "state — --export's central assumption moved")
+        # Conditional on purpose: Claude only mentions shell-snapshots for a
+        # project that has one, so its absence is not a finding. Its presence
+        # saying something OTHER than "not project-scoped" would be.
+        if "shell-snapshots" in out:
+            self.assertRegex(
+                out, r"shell-snapshots/? are not project-scoped",
+                "Claude used to say shell-snapshots is not project-scoped; "
+                "--export refuses to carry it on that basis")
 
     def test_project_dir_names_are_enc_of_their_recorded_cwd(self):
         """The load-bearing assumption: dir name == enc(session cwd)."""
@@ -3494,6 +3537,238 @@ class TestWrapperCcfindResolution(unittest.TestCase):
     def test_no_ccfind_anywhere_is_not_an_error(self):
         """The soft contract: --extract still works, off the filesystem."""
         self.assertEqual(self.resolved(), "NONE")
+
+
+# ── cross-host bundles: what --export carries, and what it refuses ──────────
+
+class ExportFixture(FixtureCase):
+    """A project with a nested sub-project, an encode-alike sibling, and the
+    session-keyed stores on both sides of the carry/refuse line."""
+
+    def seed(self):
+        self.proj = self.make_folder("my-project")
+        os.makedirs(os.path.join(self.proj, "sub"), exist_ok=True)
+        self.sub = os.path.join(self.proj, "sub")
+        self.make_project(self.proj, sessions=("aaaa-1111",))
+        self.make_project(self.sub, sessions=("bbbb-2222",))
+        # The sidecar: session-keyed, but living INSIDE the project dir.
+        side = os.path.join(self.projects, cm.enc(self.proj), "aaaa-1111",
+                            "subagents")
+        os.makedirs(side, exist_ok=True)
+        with open(os.path.join(side, "agent-1.jsonl"), "w") as f:
+            f.write(jsonl({"type": "user", "cwd": self.proj}))
+        # memory/, which `claude project purge` counts as project state.
+        mem = os.path.join(self.projects, cm.enc(self.proj), "memory")
+        os.makedirs(mem, exist_ok=True)
+        with open(os.path.join(mem, "note.md"), "w") as f:
+            f.write("# remembered\n")
+        # Encodes like a subdirectory of proj, is not one. enc() is lossy, so
+        # only a recorded cwd separates them.
+        alike = os.path.join(self.projects, cm.enc(self.proj) + "-elsewhere")
+        os.makedirs(alike, exist_ok=True)
+        with open(os.path.join(alike, "cccc-3333.jsonl"), "w") as f:
+            f.write(jsonl({"type": "user", "cwd": "/somewhere/else",
+                           "sessionId": "cccc-3333"}))
+        self.store("tasks", "aaaa-1111.json", '{"todo":[]}')
+        self.store("todos", "aaaa-1111-agent-aaaa-1111.json", "[]")
+        self.store("shell-snapshots", "snapshot-zsh-1.sh", "unalias -a\n")
+        self.store("session-env", "aaaa-1111", None)
+        self.store("file-history", "aaaa-1111", None)
+        self.add_config(self.proj, hasTrustDialogAccepted=True,
+                        allowedTools=["Bash"])
+        self.add_history(self.proj, "mine", session="aaaa-1111")
+        self.add_history("/somewhere/else", "theirs")
+        self.write_fixture()
+
+    def store(self, name, entry, content):
+        """One entry in a session-keyed store; content None makes it a dir."""
+        root = os.path.join(self.profile, name)
+        os.makedirs(root, exist_ok=True)
+        path = os.path.join(root, entry)
+        if content is None:
+            os.makedirs(path, exist_ok=True)
+            with open(os.path.join(path, "x"), "w") as f:
+                f.write("x")
+        else:
+            with open(path, "w") as f:
+                f.write(content)
+
+    def export(self, *args, expect=0):
+        """Run --export to a file and return (tar member names, manifest)."""
+        out = os.path.join(self.tmp, "bundle.tgz")
+        r = self.run_mv("--export", self.proj, "-o", out, *args, expect=expect)
+        if expect != 0 or "--dry-run" in args or "-n" in args:
+            return r, None, None
+        with tarfile.open(out) as tar:
+            names = tar.getnames()
+            manifest = json.loads(
+                tar.extractfile(cm.BUNDLE_MANIFEST).read().decode())
+        return r, names, manifest
+
+
+class TestExport(ExportFixture):
+    """What goes into a bundle is a series of deliberate calls, and every one
+    of them is a decision somebody could reasonably reverse. Each gets a test
+    naming the reason, the same way --extract's three non-actions do."""
+
+    def setUp(self):
+        super().setUp()
+        self.seed()
+
+    def test_the_project_dir_travels_with_its_sidecar(self):
+        _, names, _ = self.export()
+        enc = cm.enc(self.proj)
+        self.assertIn(f"projects/{enc}/aaaa-1111.jsonl", names)
+        self.assertIn(f"projects/{enc}/aaaa-1111/subagents/agent-1.jsonl",
+                      names, "the sidecar is session-keyed but lives inside "
+                             "the project dir, so it has to be carried by hand")
+
+    def test_memory_inside_the_project_dir_travels(self):
+        """`claude project purge` counts memory/ as project state, and it is
+        conversation content rather than anything host-bound."""
+        _, names, _ = self.export()
+        self.assertIn(f"projects/{cm.enc(self.proj)}/memory/note.md", names)
+
+    def test_a_nested_project_travels(self):
+        _, names, manifest = self.export()
+        self.assertIn(f"projects/{cm.enc(self.sub)}/bbbb-2222.jsonl", names)
+        self.assertIn(self.sub, [p["cwd"] for p in manifest["projects"]])
+
+    def test_a_sibling_that_merely_encodes_alike_does_not(self):
+        """enc() maps code/api and code-api onto one name. Only a session's
+        recorded cwd separates them, so the confirm has to happen here too."""
+        _, names, manifest = self.export()
+        self.assertNotIn(f"projects/{cm.enc(self.proj)}-elsewhere/"
+                         f"cccc-3333.jsonl", names)
+        self.assertNotIn("cccc-3333",
+                         [s for p in manifest["projects"]
+                          for s in p["sessions"]])
+
+    def test_only_this_projects_history_entries_are_carried(self):
+        _, names, manifest = self.export()
+        self.assertIn("history.jsonl", names)
+        self.assertEqual(manifest["history"], 1)
+
+    def test_session_keyed_stores_travel_by_id_prefix(self):
+        """The stores spell themselves differently — <id>.json here,
+        <id>-agent-<id>.json there — so the match is a prefix, not a name."""
+        _, names, manifest = self.export()
+        self.assertIn("stores/tasks/aaaa-1111.json", names)
+        self.assertIn("stores/todos/aaaa-1111-agent-aaaa-1111.json", names)
+        self.assertEqual(manifest["stores"], {"tasks": 1, "todos": 1})
+
+    def test_host_bound_stores_are_refused(self):
+        """shell-snapshots is the source machine's shell; session-env its
+        environment; file-history the contents of files as they were THERE.
+        The destination is a different machine and a fresh checkout."""
+        _, names, manifest = self.export()
+        for store in ("shell-snapshots", "session-env", "file-history"):
+            self.assertFalse([n for n in names if store in n],
+                             f"{store} must not travel")
+            self.assertIn(store, manifest["excluded"])
+
+    def test_the_carry_and_refuse_lists_cannot_overlap(self):
+        """Asserted on the constants, not on a fixture, because one of the
+        refusals is un-catchable through a bundle: shell-snapshots files are
+        named snapshot-zsh-<ts>-<rand>.sh, so the session-id prefix match
+        could never pick one up whichever list it is on. That makes the
+        fixture pass for a reason that has nothing to do with the decision.
+        Moving any store across the line has to turn this red on its own."""
+        self.assertFalse(set(cm.CARRIED_STORES) & set(cm.REFUSED_STORES),
+                         "a store cannot be both carried and refused")
+        for store in ("file-history", "shell-snapshots", "session-env"):
+            self.assertIn(store, cm.REFUSED_STORES)
+            self.assertNotIn(store, cm.CARRIED_STORES)
+
+    def test_the_config_entry_is_not_carried(self):
+        """It holds the trust flag, allowedTools AND the project's MCP
+        servers, which name binaries on the source host. Claude writes a
+        fresh one on first run — the refusal --extract already makes."""
+        _, names, manifest = self.export()
+        self.assertFalse([n for n in names if "claude.json" in n])
+        self.assertIs(manifest["config_entry"], False)
+        self.assertFalse([n for n in names if "Bash" in n])
+
+    def test_the_manifest_records_the_source_path(self):
+        """The one field --import cannot work without: it is what the
+        recorded cwds get remapped FROM."""
+        _, _, manifest = self.export()
+        self.assertEqual(manifest["source"]["path"], self.proj)
+        self.assertEqual(manifest["format"], cm.BUNDLE_FORMAT)
+        self.assertEqual(manifest["version"], cm.BUNDLE_VERSION)
+
+    def test_the_source_is_left_untouched(self):
+        """A fork, not a move: --export only reads."""
+        before = sorted(os.listdir(self.projects))
+        self.export()
+        self.assertEqual(sorted(os.listdir(self.projects)), before)
+        self.assertTrue(os.path.isdir(self.proj))
+        self.assertIn(self.proj, self.read_config()["projects"])
+
+    def test_nothing_keyed_on_src_is_an_error_not_an_empty_bundle(self):
+        """A bundle carrying nothing is a mistyped path dressed up as a
+        transfer — the same refusal the offer in TestOfferedReconcile makes."""
+        empty = self.make_folder("never-used")
+        out = os.path.join(self.tmp, "nope.tgz")
+        r = self.run_mv("--export", empty, "-o", out, expect=1)
+        self.assertIn("nothing to export", r.stderr)
+        self.assertFalse(os.path.exists(out))
+
+    def test_dry_run_writes_no_bundle(self):
+        out = os.path.join(self.tmp, "dry.tgz")
+        r = self.run_mv("--export", self.proj, "-o", out, "-n")
+        self.assertFalse(os.path.exists(out))
+        self.assertIn("dry run", r.stdout + r.stderr)
+
+
+class TestExportStreaming(ExportFixture):
+    """Piping is the whole transport story, so stdout has to be the tar and
+    nothing else: `claude-mv --export … | ssh quim claude-mv --import …`."""
+
+    def setUp(self):
+        super().setUp()
+        self.seed()
+
+    def test_the_bundle_streams_to_stdout_with_the_report_on_stderr(self):
+        env = dict(os.environ, CLAUDE_MV_RESTORE_ROOT=self.restore_root)
+        r = subprocess.run(
+            [sys.executable, SCRIPT, "--profile", self.profile,
+             "--export", self.proj],
+            capture_output=True, env=env)
+        self.assertEqual(r.returncode, 0, r.stderr.decode(errors="replace"))
+        self.assertTrue(r.stdout.startswith(b"\x1f\x8b"),
+                        "stdout must be the gzip stream, not the report")
+        with tarfile.open(fileobj=io.BytesIO(r.stdout)) as tar:
+            self.assertIn(cm.BUNDLE_MANIFEST, tar.getnames())
+        self.assertIn(b"exporting", r.stderr)
+
+    def test_a_written_bundle_reports_on_stdout_instead(self):
+        """With -o there is no stream to protect, so the report goes where
+        every other claude-mv report goes."""
+        out = os.path.join(self.tmp, "b.tgz")
+        r = self.run_mv("--export", self.proj, "-o", out)
+        self.assertIn("exporting", r.stdout)
+
+
+class TestExportGrammar(FixtureCase):
+    """--export reads and writes a file; it is not a move, and the argument
+    grammar should make that impossible to get half-right."""
+
+    def test_a_second_positional_is_refused(self):
+        d = self.make_folder("x")
+        r = self.run_mv("--export", d, d + "-2", expect=2)
+        self.assertIn("--export takes one path", r.stderr)
+
+    def test_output_needs_export(self):
+        d = self.make_folder("x")
+        r = self.run_mv(d, d + "-2", "-o", "/tmp/x.tgz", expect=2)
+        self.assertIn("needs --export", r.stderr)
+
+    def test_export_does_not_combine_with_the_migrating_modes(self):
+        d = self.make_folder("x")
+        for flag in ("--extract", "--already-moved"):
+            r = self.run_mv("--export", d, flag, expect=2)
+            self.assertIn("--export only reads", r.stderr)
 
 
 # ── live: drive the real Claude Code binary ─────────────────────────────────

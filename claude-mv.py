@@ -2163,6 +2163,312 @@ def run_session_mode(args, src: str, dst: str | None,
     return 0
 
 
+# ── cross-host bundles ──────────────────────────────────────────────────────
+# --export serialises a project's Claude history into one file so it can be
+# carried to another machine; --import unpacks it there. The transport is
+# deliberately NOT claude-mv's job:
+#
+#   claude-mv --export ~/code/proj | ssh quim claude-mv --import ~/code/proj
+#
+# Each side then performs a purely local operation it can verify. That is not
+# squeamishness about SSH — it is the only shape in which the tool's existing
+# guarantees survive. canonical() resolves symlinked ancestors against the
+# filesystem it is running on, profile resolution is the wrapper's job on each
+# machine, restore points can only roll back writes on their own host, and the
+# live-session guard needs real pids. A mode that reached across the network
+# would have to reimplement all four, badly.
+#
+# It is a FORK, not a move. The source keeps its history; the destination gets
+# a copy; from that moment the two diverge and never reconverge, like a branch
+# nobody merges. Nothing here pretends otherwise — there is deliberately no
+# cross-host `consolidate`.
+#
+# What a project owns is Claude Code's answer, not ours: `claude project purge
+# --dry-run <path>` enumerates transcripts + memory/, the config entry,
+# file-history/<session>, and the history.jsonl prompts, and says outright that
+# shell-snapshots/ is not project-scoped. The conformance layer pins this list
+# against that command, because it is the vendor's model of the same question
+# and it will move before ours does.
+#
+# Two stores are refused against that model, each for a reason that only exists
+# because the destination is a different machine:
+#
+#   config entry      carries the trust flag, allowedTools AND the project's
+#                     MCP servers, which name binaries and paths on the source
+#                     host. Transplanting it would both approve a folder the
+#                     user never approved there and point Claude at tooling
+#                     that does not exist. Claude writes a fresh entry on first
+#                     run — the same refusal --extract already makes.
+#   file-history/     the pre-edit contents of files as they were on the source
+#                     machine. The destination is a fresh checkout, so undoing
+#                     into it would restore a file that was never there.
+#
+# And two the vendor already excludes: shell-snapshots/ (a dump of the source
+# machine's shell — every function and alias, ~340KB of zsh in the profile this
+# was written against) and session-env/.
+
+BUNDLE_FORMAT = "claude-mv-bundle"
+BUNDLE_VERSION = 1
+BUNDLE_MANIFEST = "manifest.json"
+
+# Session-keyed stores that travel. Entries are matched by session-id PREFIX
+# rather than by an exact filename: the stores spell themselves differently
+# (`<id>/`, `<id>.json`, `<id>-agent-<id>.json`) and a convention we guessed
+# wrong would silently carry nothing. Prefix-then-confirm is how this tool
+# already reasons about the lossy project-dir encoding.
+CARRIED_STORES = ("tasks", "todos", "plans")
+
+# Refused, with the reason each is refused. Reported by --export so the
+# exclusions are visible at the moment they happen rather than in a doc.
+REFUSED_STORES = {
+    "file-history": "pre-edit file contents from the source machine",
+    "shell-snapshots": "the source machine's shell (not project-scoped)",
+    "session-env": "the source machine's environment",
+}
+
+
+def session_ids_in(project_dir: str) -> list[str]:
+    """The session ids filed in one project dir, by transcript name."""
+    try:
+        names = sorted(os.listdir(project_dir))
+    except OSError:
+        return []
+    return [n[:-len(".jsonl")] for n in names if n.endswith(".jsonl")]
+
+
+def store_entries(profile: str, store: str, ids: set) -> list[tuple[str, str]]:
+    """[(path, name)] in <profile>/<store> belonging to any of `ids`.
+
+    Prefix matching, so `<id>.json`, `<id>/` and `<id>-agent-<id>.json` all
+    count. A store that does not exist is simply empty — none of these are
+    guaranteed to be present, and several are empty on a normal machine.
+    """
+    root = os.path.join(profile, store)
+    try:
+        names = sorted(os.listdir(root))
+    except OSError:
+        return []
+    return [(os.path.join(root, n), n)
+            for n in names if any(n.startswith(i) for i in ids)]
+
+
+def collect_bundle(profiles: list[str], src: str) -> dict:
+    """Everything a bundle for `src` carries, gathered across every profile.
+
+    Project dirs come from find_project_dirs(), so a nested project under src
+    travels too and an unrelated sibling that merely encodes alike does not —
+    the same prefix-then-confirm the folder move uses.
+    """
+    projects, ids = [], set()
+    for profile in profiles:
+        root = os.path.join(profile, "projects")
+        for d, cwd in find_project_dirs(root, src):
+            sessions = session_ids_in(d)
+            ids.update(sessions)
+            projects.append({"profile": profile, "dir": d, "cwd": cwd,
+                             "enc": os.path.basename(d), "sessions": sessions})
+
+    history = []          # (profile, [raw lines])
+    for profile in profiles:
+        hist = os.path.join(profile, "history.jsonl")
+        if not os.path.isfile(hist):
+            continue
+        keep = []
+        with open(hist, encoding="utf-8") as f:
+            for line in f:
+                try:
+                    obj = json.loads(line.rstrip("\n"))
+                except ValueError:
+                    continue
+                project = obj.get("project")
+                if isinstance(project, str) and under(project, src):
+                    keep.append(line if line.endswith("\n") else line + "\n")
+        if keep:
+            history.append((profile, keep))
+
+    stores = {}
+    for store in CARRIED_STORES:
+        found = []
+        for profile in profiles:
+            found.extend(store_entries(profile, store, ids))
+        if found:
+            stores[store] = found
+    return {"src": src, "projects": projects, "ids": sorted(ids),
+            "history": history, "stores": stores}
+
+
+def bundle_bytes(bundle: dict) -> int:
+    """Uncompressed size of what the bundle will carry. Best effort — this is
+    a figure printed to a human before a possibly large write, not a promise."""
+    total = 0
+    for p in bundle["projects"]:
+        for root, _, files in os.walk(p["dir"]):
+            for name in files:
+                try:
+                    total += os.path.getsize(os.path.join(root, name))
+                except OSError:
+                    pass
+    for _, lines in bundle["history"]:
+        total += sum(len(x.encode("utf-8")) for x in lines)
+    for entries in bundle["stores"].values():
+        for path, _ in entries:
+            if os.path.isdir(path):
+                for root, _, files in os.walk(path):
+                    for name in files:
+                        try:
+                            total += os.path.getsize(os.path.join(root, name))
+                        except OSError:
+                            pass
+            else:
+                try:
+                    total += os.path.getsize(path)
+                except OSError:
+                    pass
+    return total
+
+
+def human_size(n: int) -> str:
+    for unit in ("B", "KB", "MB", "GB"):
+        if n < 1024 or unit == "GB":
+            return f"{n:.0f} {unit}" if unit == "B" else f"{n:.1f} {unit}"
+        n /= 1024.0
+
+
+def bundle_manifest(bundle: dict, profiles: list[str]) -> dict:
+    """The contract --import reads back.
+
+    `source.path` is the one field import cannot work without: it is what the
+    recorded cwds are remapped FROM. Everything else is provenance, reported to
+    the human on the far side so a transferred history says where it came from.
+    """
+    uname = os.uname()
+    return {
+        "format": BUNDLE_FORMAT,
+        "version": BUNDLE_VERSION,
+        "created": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "source": {
+            "path": bundle["src"],
+            "host": uname.nodename,
+            "platform": sys.platform,
+            "os": f"{uname.sysname} {uname.release}",
+            "profiles": profiles,
+        },
+        "projects": [{"enc": p["enc"], "cwd": p["cwd"],
+                      "sessions": p["sessions"]} for p in bundle["projects"]],
+        "history": sum(len(lines) for _, lines in bundle["history"]),
+        "stores": {k: len(v) for k, v in bundle["stores"].items()},
+        "excluded": REFUSED_STORES,
+        "config_entry": False,
+    }
+
+
+def write_bundle(bundle: dict, manifest: dict, fileobj=None,
+                 path: str | None = None) -> None:
+    """Write the tar.gz, either to a path or streamed to a file object.
+
+    Streaming mode ("w|gz") is what makes `--export | ssh host claude-mv
+    --import` work without a temp file on either side.
+    """
+    import tarfile
+    from io import BytesIO
+
+    def add_tree(tar, src_path, arcname):
+        tar.add(src_path, arcname=arcname, recursive=True)
+
+    def add_data(tar, arcname, data: bytes):
+        info = tarfile.TarInfo(arcname)
+        info.size = len(data)
+        info.mtime = int(time.time())
+        tar.addfile(info, BytesIO(data))
+
+    mode = "w:gz" if path else "w|gz"
+    tar = (tarfile.open(path, mode) if path
+           else tarfile.open(fileobj=fileobj, mode=mode))
+    try:
+        add_data(tar, BUNDLE_MANIFEST,
+                 json.dumps(manifest, indent=2).encode("utf-8"))
+        for p in bundle["projects"]:
+            add_tree(tar, p["dir"], f"projects/{p['enc']}")
+        if bundle["history"]:
+            joined = "".join(line for _, lines in bundle["history"]
+                             for line in lines)
+            add_data(tar, "history.jsonl", joined.encode("utf-8"))
+        for store, entries in bundle["stores"].items():
+            for entry_path, name in entries:
+                add_tree(tar, entry_path, f"stores/{store}/{name}")
+    finally:
+        tar.close()
+
+
+def report_bundle(bundle: dict, manifest: dict, out) -> None:
+    """What is going into the bundle, to `out` (stderr when piping)."""
+    print(c("exporting ", "bold") + c(bundle["src"], "cyan"), file=out)
+    for p in bundle["projects"]:
+        n = len(p["sessions"])
+        plural = "" if n == 1 else "s"
+        line = (f"  {c('projects/' + p['enc'], 'cyan')} "
+                f"{c(f'({n} session file{plural})', 'dim')}")
+        if p["cwd"] != bundle["src"]:
+            # A nested project travelling along: say which, since its dir name
+            # is an encoding nobody reads back at a glance.
+            line += " " + c(p["cwd"], "dim")
+        print(line, file=out)
+    n_hist = manifest["history"]
+    if n_hist:
+        word = "entry" if n_hist == 1 else "entries"
+        print(f"  {c('history.jsonl', 'bold')} "
+              f"{c(f'({n_hist} {word})', 'dim')}", file=out)
+    for store, n in manifest["stores"].items():
+        word = "entry" if n == 1 else "entries"
+        print(f"  {c(store + '/', 'cyan')} {c(f'({n} {word})', 'dim')}",
+              file=out)
+    print(c("  not carried: ", "dim") +
+          c(" · ".join(REFUSED_STORES), "yellow") + " " +
+          c("· the config entry (trust, allowedTools, MCP servers)", "yellow"),
+          file=out)
+
+
+def cmd_export(args, profiles: list[str]) -> int:
+    """--export: serialise src's history into a bundle for another machine."""
+    src = canonical(args.src)
+    # stdout carries the bundle when there is no -o, so every human-facing
+    # line has to go to stderr or it would corrupt the tar.
+    out = sys.stdout if args.output else sys.stderr
+
+    bundle = collect_bundle(profiles, src)
+    if not bundle["projects"] and not bundle["history"]:
+        print(emsg(f"no Claude history is keyed on "
+                   f"{c(src, 'cyan', stream=sys.stderr)} — nothing to "
+                   f"export\n  ({BORN_HINT})"), file=sys.stderr)
+        return 1
+
+    manifest = bundle_manifest(bundle, profiles)
+    size = bundle_bytes(bundle)
+    report_bundle(bundle, manifest, out)
+    print(c(f"  {human_size(size)} uncompressed", "dim"), file=out)
+
+    if args.dry_run:
+        print(c("(dry run — no bundle was written)", "dim"), file=out)
+        return 0
+
+    try:
+        if args.output:
+            write_bundle(bundle, manifest, path=args.output)
+            print("\n" + c("✅ exported", "green", "bold") + " — " +
+                  c(args.output, "cyan"), file=out)
+            print(c("   unpack it on the other machine with:  "
+                    "claude-mv --import <dst-dir> -i <file>", "dim"), file=out)
+        else:
+            write_bundle(bundle, manifest, fileobj=sys.stdout.buffer)
+            sys.stdout.buffer.flush()
+            print("\n" + c("✅ exported", "green", "bold") +
+                  c(" — bundle written to stdout", "dim"), file=out)
+    except OSError as e:
+        print(emsg(f"could not write the bundle: {e}"), file=sys.stderr)
+        return 3
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(
         prog="claude-mv",
@@ -2206,6 +2512,13 @@ def main() -> int:
                          "one folder only)")
     ap.add_argument("--limit", type=int, default=50, metavar="N",
                     help="how many sessions to offer (default 50)")
+    ap.add_argument("--export", action="store_true",
+                    help="serialise <src-dir>'s Claude history into a bundle "
+                         "for another machine (stdout, or -o FILE). The "
+                         "transport is yours: pipe it through ssh")
+    ap.add_argument("-o", "--output", metavar="FILE",
+                    help="with --export: write the bundle here instead of "
+                         "stdout")
     ap.add_argument("--restore", nargs="?", const="list", metavar="STAMP",
                     help="list restore points, or roll one back "
                          "(--restore <stamp|latest>)")
@@ -2224,8 +2537,22 @@ def main() -> int:
                  "browses for nothing to begin with")
     # --extract fills its own paths in (cwd, then a picker), so it is exempt
     # from the requirement the folder move has.
-    if not args.extract and (not args.src or not args.dst):
+    if not args.extract and not args.export and (not args.src or not args.dst):
         ap.error("src and dst are required (or use --restore)")
+    if args.export and not args.src:
+        ap.error("--export needs the project directory whose history to "
+                 "export")
+    if args.export and args.dst:
+        ap.error("--export takes one path — the project to export. The "
+                 "destination is chosen on the receiving machine by "
+                 "--import; write the bundle with -o FILE or pipe stdout")
+    if args.export and (args.extract or args.already_moved):
+        ap.error("--export only reads: it neither moves a folder nor "
+                 "re-keys anything, so it does not combine with --extract "
+                 "or --already-moved")
+    if args.output and not args.export:
+        ap.error("-o/--output names where a bundle is written, so it needs "
+                 "--export")
     if args.already_moved and args.on_conflict == "rename-only":
         ap.error("--on-conflict rename-only is meaningless with "
                  "--already-moved (there is no mv to do on its own) — "
@@ -2255,6 +2582,16 @@ def main() -> int:
         ap.error("--search and --session are two ways to say which sessions: "
                  "one filters the list, the other names ids outright and "
                  "skips it")
+
+    if args.export:
+        # Read-only across every profile, so it needs no path judgement at
+        # all: there is nothing to move, nothing to conflict, and the
+        # destination is the receiving machine's business.
+        profiles = [p for p in args.profile if os.path.isdir(p)]
+        if not profiles:
+            print(emsg("no existing --profile dirs given"), file=sys.stderr)
+            return 1
+        return cmd_export(args, profiles)
 
     if args.extract:
         # Paths are settled inside the mode — the source picker needs the

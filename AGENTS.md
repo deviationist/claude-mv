@@ -115,6 +115,31 @@ Code history so `claude --resume` still finds the sessions at the new path.
   non-interactive, which is why it is not called that: the session picker
   still runs, and `--session` is what silences that. **`dst` is never
   inferred** — not from the cwd, the source, or the session.
+- **`--export` serialises a project's history for another machine**, and the
+  transport is deliberately not ours: `claude-mv --export ~/p | ssh quim
+  claude-mv --import ~/p`. Each side then does a local operation it can
+  verify, which is the only shape in which the existing guarantees survive —
+  `canonical()` resolves against the filesystem it runs on, profiles are the
+  wrapper's job per machine, a restore point only rolls back its own host, and
+  the live guard needs real pids. A network-aware mode would reimplement all
+  four badly. **It is a fork, not a move**: the source keeps everything, the
+  two copies diverge from that moment, and there is deliberately no cross-host
+  `consolidate`. What a project *owns* is Claude Code's answer, not ours —
+  `claude project purge --dry-run <path>` enumerates it (transcripts +
+  `memory/`, the config entry, `file-history/<session>`, the history.jsonl
+  prompts) and says outright that shell-snapshots is not project-scoped. That
+  command is read as a **conformance oracle only**; its output is prose and
+  parsing it at runtime would be a fragile dependency. Two stores are refused
+  against the vendor's own model, each for a reason that exists only because
+  the destination is a different machine: the **config entry** (trust,
+  `allowedTools`, *and* the project's MCP servers, which name binaries on the
+  source host — the refusal `--extract` already makes) and **`file-history/`**
+  (pre-edit file contents as they were *there*, against a fresh checkout
+  *here*). Session-keyed stores are matched by id **prefix**, not by filename,
+  because the stores spell themselves differently (`<id>/`, `<id>.json`,
+  `<id>-agent-<id>.json`) and a guessed convention would silently carry
+  nothing. With no `-o`, stdout is the tar and **every human-facing line goes
+  to stderr** — that is what makes the pipe above work at all.
 - **Conflicts** (destination already has history) are detected *before* the
   `mv` and resolved by one policy: `--on-conflict
   {overwrite,consolidate,rename-only,abort}`, asked interactively on a tty,
@@ -178,8 +203,9 @@ Code history so `claude --resume` still finds the sessions at the new path.
   than stopping. **`scope_exact` in ccfind's JSON is the compatibility
   handshake**: a ccfind that took `-x` and ignored it would answer about the
   whole *subtree*, so anything but a definite `true` means fall back.
-- `tests/test_claude_mv.py` — ten layers (unit, e2e, multi-profile, session
-  sources, session move + picker, search + scope + survey page, zsh wrapper,
+- `tests/test_claude_mv.py` — eleven layers (unit, e2e, multi-profile, session
+  sources, session move + picker, search + scope + survey page, bundles,
+  zsh wrapper,
   conformance against the real `~/.claude`, live against the `claude` binary,
   resume UI under tmux). The
   last two opt in with `CLAUDE_MV_LIVE_TEST=1`; they need no auth and spend no
@@ -263,6 +289,14 @@ Code history so `claude --resume` still finds the sessions at the new path.
   what Claude writes and because ccfind reads the cwd out with a regex that
   assumes no space after the colon. A prettier fixture is invisible to it, and
   the cross-source test silently stops proving anything.
+- **Touching `--export`? One refusal cannot be tested through a bundle.**
+  `shell-snapshots` files are named `snapshot-zsh-<ts>-<rand>.sh`, so the
+  session-id prefix match could never pick one up whichever list it is on —
+  a fixture asserting it does not travel passes for a reason that has nothing
+  to do with the decision, and mutation-testing caught exactly that. The
+  carry/refuse lists are therefore asserted **disjoint on the constants**.
+  When adding a store, put it in one list or the other and check the mutation
+  turns the suite red.
 - Touching `--extract`? The three deliberate non-actions — no `cwd` rewrite,
   no config entry, no folder move — are load-bearing, each with a test naming
   the reason. If one starts looking like an oversight, read the test before

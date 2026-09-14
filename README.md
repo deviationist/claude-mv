@@ -41,6 +41,7 @@ Requires `python3` (stdlib only) and zsh. Optional per-machine config:
 ```
 claude-mv [-n|--dry-run] [--force] [--already-moved] [--on-conflict MODE] <src-dir> <dst>
 claude-mv --extract [--search TEXT] [-R] [--no-browse] [--session ID]... [--limit N] [<src-dir>] [<dst>]
+claude-mv --export [-o FILE] <src-dir>
 claude-mv --restore [<stamp>|latest]
 ```
 
@@ -56,6 +57,8 @@ claude-mv --restore [<stamp>|latest]
 | `-R`, `--recursive` | with `--extract`: consider the sessions homed in `src` **and every folder below it** (default: that one folder) |
 | `--limit N` | how many sessions the picker offers (default 50) |
 | `--on-conflict MODE` | policy when the destination already has history: `overwrite`, `consolidate`, `rename-only`, `abort` (with `--extract`: `overwrite`, `skip`, `abort`) |
+| `--export` | serialise `<src-dir>`'s history into a bundle for another machine (stdout, or `-o FILE`) |
+| `-o`, `--output` | with `--export`: write the bundle to this file instead of stdout |
 | `--restore [stamp]` | list restore points, or roll one back |
 
 `src` and `dst` follow `mv` semantics — if `dst` is an existing directory the
@@ -246,6 +249,55 @@ Three things worth knowing, because all three are deliberate:
 - **The transcript is not rewritten.** No folder moved, so the `cwd` lines
   stay as they are: the session really did start in `~/code`. Resume works
   regardless — it keys on which project dir the transcript sits in.
+
+### Taking a project's history to another machine
+
+You built it on your laptop and deployed it to a server — a fresh `git
+checkout`, same project, different host. The code is there; the conversation
+that produced it is not.
+
+`--export` serialises a project's history into one bundle. The transport is
+deliberately yours:
+
+```sh
+claude-mv --export ~/code/my-project | ssh quim claude-mv --import ~/code/my-project
+```
+
+**`--import` is not built yet** — `--export` landed first, so today the bundle
+is something you write and keep (`-o FILE`) rather than something you can
+unpack at the far end.
+
+Each side does a purely local operation it can verify, which is the only shape
+in which this tool's guarantees survive a network: paths are canonicalized on
+the machine they belong to, each host resolves its own profiles, restore points
+can only roll back writes on their own disk, and the live-session guard needs
+real pids.
+
+**It is a fork, not a move.** The source keeps its history, the destination
+gets a copy, and from that moment the two diverge and never reconverge — like a
+branch nobody merges. There is deliberately no cross-host `consolidate`.
+
+What travels, and what does not:
+
+| Store | Bundle | Why |
+|---|---|---|
+| `projects/<enc>/` — transcripts, `<id>/` sidecars, `memory/` | carried | the conversation itself |
+| `history.jsonl` entries for this project | carried | |
+| `tasks/`, `todos/`, `plans/` | carried | session-keyed, host-neutral |
+| the `~/.claude.json` project entry | **refused** | it holds the trust flag, `allowedTools` **and** the project's MCP servers, which name binaries on the source host. Claude writes a fresh one on first run |
+| `file-history/<session>` | **refused** | the pre-edit contents of files *as they were on the source machine*; the destination is a different checkout |
+| `shell-snapshots/`, `session-env/` | **refused** | the source machine's shell and environment |
+
+The first three rows are what `claude project purge --dry-run` calls project
+state, which is where that list comes from — Claude Code's own model of the
+same question, pinned by the conformance layer rather than parsed at runtime.
+The refusals disagree with it deliberately, and each has a test naming why.
+
+One caveat worth knowing before you resume on the far side: paths inside
+message content are never rewritten, by the same rule that governs a local
+move. A transferred conversation therefore describes the machine it was
+recorded on — in one profile here, `/Users/…` appears 22,044 times in a single
+transcript. Resume works; the narrative is about somewhere else.
 
 ### More than one profile, or a project nested inside
 
@@ -483,7 +535,7 @@ python3 tests/test_claude_mv.py              # hermetic, ~13s
 CLAUDE_MV_LIVE_TEST=1 python3 tests/test_claude_mv.py   # + live layers, ~20s
 ```
 
-Ten layers, each closing a gap the previous ones can't see:
+Eleven layers, each closing a gap the previous ones can't see:
 
 1. **Unit** — the pure helpers (encoding, canonicalization, config merging),
    the reporting layer (when colour is on, that it changes nothing but the
@@ -520,21 +572,26 @@ Ten layers, each closing a gap the previous ones can't see:
    about and *where* ccfind is; the layers above bypass both by passing them
    in. Covers `.env` pin / claude-profile / built-in default, and ccfind as a
    loaded function, an override, a sibling clone, or absent.
-8. **Conformance** — read-only checks that the *real* `~/.claude` still
+8. **Bundles** — what `--export` carries and, more to the point, what it
+   refuses: the config entry, `file-history/`, `shell-snapshots/`. One of
+   those refusals is asserted on the constants rather than through a fixture,
+   because `shell-snapshots` filenames aren't session-keyed — a bundle test
+   would pass for a reason unrelated to the decision.
+9. **Conformance** — read-only checks that the *real* `~/.claude` still
    matches the format the fixtures imitate: the cwd encoding, `sessionId` on
    history entries (without which `--extract` can't tell one session's
    prompts from another's), the `<id>/` sidecar layout, and that transcripts
    are still written compactly. Without this, a Claude Code format change
    would leave every other test green while the tool broke.
-9. **Live** — drives the real `claude` binary and uses it as the oracle for
+10. **Live** — drives the real `claude` binary and uses it as the oracle for
    its own cwd encoding: Claude writes a project dir, claude-mv migrates it,
    Claude runs again at the new path and must land in the same directory
    rather than creating a second one.
-10. **Resume UI** — runs `claude --resume` under tmux at the moved path and
+11. **Resume UI** — runs `claude --resume` under tmux at the moved path and
    reads the picker off the screen, with a plain-`mv` negative control that
    must come up empty.
 
-Layers 9 and 10 are opt-in via `CLAUDE_MV_LIVE_TEST=1`. Neither needs
+Layers 10 and 11 are opt-in via `CLAUDE_MV_LIVE_TEST=1`. Neither needs
 authentication or spends any tokens: Claude Code writes its project files
 before it checks credentials, and the resume picker reads sessions straight
 off disk.
