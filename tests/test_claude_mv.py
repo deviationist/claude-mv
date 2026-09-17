@@ -2888,6 +2888,27 @@ class TestSessionPickerWithFzf(SessionFixture):
         # sized to the list rather than a fixed slab of screen
         self.assertEqual(height[0], "--height=6")   # 3 sessions + 3 chrome
 
+    def test_fzf_keeps_the_terminal_to_draw_on(self):
+        """The regression this guards is an invisible HANG.
+
+        In --height mode fzf probes the terminal — and draws — on STDERR, not
+        stdout. Capture that stream and the probe lands in a pipe instead of
+        the terminal, nothing ever replies, and fzf waits forever for an
+        answer that cannot come, having rendered nothing: the command appears
+        to do nothing at all until it is killed. Only older fzf is affected
+        (newer builds open /dev/tty themselves), which is exactly why it
+        survives a laptop with a current fzf and strands an older server.
+
+        So: whatever fzf writes to stderr must still be ours to see. The stub
+        writes a marker there, and the assertion is that it came through.
+        """
+        self.write_fzf("#!/bin/sh\nprintf PROBEMARKER >&2\nsed -n 1p\n")
+        r = self.run_mv("--extract", "--no-browse", self.code, self.proj,
+                        env_extra=self.env())
+        self.assertIn("PROBEMARKER", r.stderr,
+                      "fzf's stderr was captured — its --height probe never "
+                      "reaches the terminal, which hangs it invisibly")
+
     def test_the_marked_row_is_the_session_that_moves(self):
         # second row of the menu, mapped back by its index column
         self.write_fzf("#!/bin/sh\nsed -n 2p\n")

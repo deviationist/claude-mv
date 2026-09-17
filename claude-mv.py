@@ -1019,12 +1019,19 @@ def pick_with_fzf(rows: list[dict]) -> list[dict] | None:
     menu = "\n".join(f"{i}\t{label}"
                      for i, label in enumerate(session_labels(rows)))
     try:
+        # stdout only, never capture_output: in --height mode fzf probes the
+        # terminal (and draws) on STDERR. Capturing it puts that probe in a
+        # pipe, the terminal never sees it and so never replies, and fzf waits
+        # forever for an answer that cannot come — having drawn nothing. An
+        # invisible hang, and only on fzf older than ~0.46; newer builds open
+        # /dev/tty themselves and survive it. ccfind's `$(... | fzf)` gets
+        # this right by construction, and this is that same contract.
         r = subprocess.run(
             [fzf, "--multi", "--with-nth=2..", "--delimiter=\t",
              *fzf_layout(len(rows)),
              "--prompt=session(s) to move > ",
              "--header=Tab marks · Enter confirms · Esc cancels"],
-            input=menu, capture_output=True, text=True)
+            input=menu, stdout=subprocess.PIPE, text=True)
     except (OSError, subprocess.SubprocessError):
         return None
     if r.returncode != 0:          # 1 = no match, 130 = Esc/^C
@@ -1200,12 +1207,14 @@ def pick_dir_with_fzf(start: str, title: str, profiles: list[str],
         rows = dir_rows(current, profiles, recursive)
         menu = "\n".join(f"{i}\t{d}" for i, (_, d) in enumerate(rows))
         try:
+            # stdout only — see pick_with_fzf: capturing stderr swallows the
+            # --height probe and hangs fzf invisibly.
             r = subprocess.run(
                 [fzf, "--with-nth=2..", "--delimiter=\t",
                  *fzf_layout(len(rows)),
                  f"--prompt={os.path.basename(current) or '/'} > ",
                  f"--header={title} — {current}"],
-                input=menu, capture_output=True, text=True)
+                input=menu, stdout=subprocess.PIPE, text=True)
         except (OSError, subprocess.SubprocessError):
             return None
         if r.returncode != 0:          # Esc / ^C
