@@ -193,7 +193,22 @@ Code history so `claude --resume` still finds the sessions at the new path.
   line this tool prints. A line count rather than `~N%`: the auto-size form
   needs a newer fzf, and an unknown flag exits non-zero, which `pick_with_fzf`
   cannot tell apart from "cancelled". Mirrors ccfind's `--reverse --height=80%`;
-  the family should not disagree about which way its pickers run. In `auto`,
+  the family should not disagree about which way its pickers run.
+  **Choosing `--height` is what makes fzf's stderr load-bearing, so neither
+  picker may capture it.** In height mode fzf probes the terminal — and draws —
+  on STDERR, not stdout. `capture_output=True` puts that probe in a pipe, the
+  terminal never sees it and so never replies, and fzf waits forever for an
+  answer that cannot come, having rendered nothing: the command appears to do
+  nothing at all until it is killed. Both call sites therefore pass
+  `stdout=subprocess.PIPE` alone, and neither reads `r.stderr`. This is **not**
+  the no-tty hang described next, and `fzf_wanted()` does not guard it — there
+  *is* a tty, the guard is satisfied, and it hangs anyway. Older fzf only
+  (newer builds open `/dev/tty` themselves), which is precisely the trap: it
+  survives a laptop on 0.74 and strands a server on 0.44, so the suite rather
+  than the machine has to catch it — `test_fzf_keeps_the_terminal_to_draw_on`
+  stubs an fzf that writes to stderr and asserts the marker still reaches us.
+  ccfind's `$(... | fzf)` holds the same contract by construction; this is the
+  one place it had to be said out loud. In `auto`,
   fzf is only launched when there is a tty (`fzf_wanted`): it draws a
   full-screen UI and reads the keyboard, so starting it on a pipe hangs rather
   than fails, which is exactly what the suite hit. Every failure path falls
@@ -245,7 +260,10 @@ Code history so `claude --resume` still finds the sessions at the new path.
   sessions deliberately terse for that reason and says so in place.
   Reconstruction means it can
   drift from reality: if the invocation in `pick_with_fzf` changes, that
-  function has to change with it.
+  function has to change with it — "the invocation" meaning what fzf is *told*
+  (prompt, header, `--multi`, the rows fed in), not how it is run: the
+  `subprocess` kwargs are invisible here, so the stderr fix above needed no
+  reconstruction change.
   **Five things are load-bearing; changing any one silently breaks it:**
   (1) it must **loop** — a browser does not pause a CSS animation in an
   offscreen `<img>`, so a run-once reveal on an image below the fold is
